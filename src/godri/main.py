@@ -20,6 +20,7 @@ from godri.services.docs_service import DocsService
 from godri.services.sheets_service import SheetsService
 from godri.services.slides_service import SlidesService
 from godri.services.translate_service import TranslateService
+from godri.services.mcp_server import mcp
 
 
 class GodriCLI:
@@ -751,14 +752,120 @@ class GodriCLI:
 
     async def handle_slides_content_list(self, args):
         """Handle listing content in slides."""
-        content_elements = self.slides_service.list_slide_content(args.presentation_id, args.slide_id)
-        if not content_elements:
-            print(f"No content found in slide {args.slide_id}")
-            return
+        try:
+            if args.all or not args.slides:
+                # List content for all slides
+                results = self.slides_service.list_multiple_slides_content(args.presentation_id)
+                if not results:
+                    print("No slides found in presentation")
+                    return
 
-        print(f"Content in slide {args.slide_id}:")
-        for element in content_elements:
-            print(f"  - ID: {element['id']}, Type: {element['type']}")
+                self._display_multiple_slides_content(results, args.detailed)
+            else:
+                # List content for specific slides
+                if len(args.slides) == 1:
+                    # Single slide
+                    content_elements = self.slides_service.list_slide_content(args.presentation_id, args.slides[0])
+                    if not content_elements:
+                        print(f"No content found in slide {args.slides[0]}")
+                        return
+
+                    print(f"Content in slide {args.slides[0]}:")
+                    self._display_slide_content(content_elements, args.detailed)
+                else:
+                    # Multiple specific slides
+                    results = self.slides_service.list_multiple_slides_content(args.presentation_id, args.slides)
+                    if not results:
+                        print("No content found for specified slides")
+                        return
+
+                    self._display_multiple_slides_content(results, args.detailed)
+
+        except ValueError as e:
+            print(f"Error: {e}")
+        except Exception as e:
+            self.logger.error("Failed to list slide content: %s", str(e))
+            print(f"Failed to list slide content: {e}")
+
+    def _display_slide_content(self, content_elements, detailed=False):
+        """Display content elements for a single slide."""
+        for i, element in enumerate(content_elements):
+            print(f"  Element {i+1}:")
+            print(f"    ID: {element['id']}")
+            print(f"    Type: {element['type']}")
+
+            if "size" in element:
+                size = element["size"]
+                print(f"    Size: {size['width']} x {size['height']}")
+
+            if "position" in element:
+                pos = element["position"]
+                print(f"    Position: ({pos['x']}, {pos['y']})")
+                if detailed and ("scaleX" in pos or "scaleY" in pos):
+                    print(f"    Scale: X={pos.get('scaleX', 1)}, Y={pos.get('scaleY', 1)}")
+
+            if "text_content" in element and element["text_content"]:
+                print(f"    Text: \"{element['text_content']}\"")
+
+                if detailed and "text_details" in element:
+                    for j, detail in enumerate(element["text_details"]):
+                        if detail["content"].strip():
+                            print(f"      Text {j+1}: \"{detail['content'].strip()}\"")
+                            if "style" in detail:
+                                style = detail["style"]
+                                style_parts = []
+                                if style.get("bold"):
+                                    style_parts.append("bold")
+                                if style.get("italic"):
+                                    style_parts.append("italic")
+                                if style.get("underline"):
+                                    style_parts.append("underline")
+                                if style.get("font_family"):
+                                    style_parts.append(f"font:{style['font_family']}")
+                                if style.get("font_size"):
+                                    style_parts.append(f"size:{style['font_size']}")
+                                if style.get("text_color"):
+                                    style_parts.append(f"color:{style['text_color']}")
+                                if style_parts:
+                                    print(f"        Style: {', '.join(style_parts)}")
+
+            if "shape_type" in element:
+                print(f"    Shape: {element['shape_type']}")
+                if detailed and "shape_properties" in element and element["shape_properties"]:
+                    props = element["shape_properties"]
+                    if "background_color" in props:
+                        print(f"    Background: {props['background_color']}")
+                    if "border_width" in props:
+                        print(f"    Border: {props['border_width']} ({props.get('border_style', 'SOLID')})")
+
+            if "table_info" in element:
+                table_info = element["table_info"]
+                print(f"    Table: {table_info['rows']} rows x {table_info['columns']} columns")
+                if detailed and "table_contents" in element:
+                    print(f"    Contents:")
+                    for row_idx, row in enumerate(element["table_contents"]):
+                        row_text = " | ".join(cell.strip() if cell.strip() else "(empty)" for cell in row)
+                        print(f"      Row {row_idx+1}: {row_text}")
+
+            if "image_properties" in element:
+                img_props = element["image_properties"]
+                print(f"    Image:")
+                if img_props.get("content_url"):
+                    print(f"      Content URL: {img_props['content_url']}")
+                if img_props.get("source_url"):
+                    print(f"      Source URL: {img_props['source_url']}")
+
+            print()  # Empty line between elements
+
+    def _display_multiple_slides_content(self, results, detailed=False):
+        """Display content for multiple slides."""
+        for slide_key, content_elements in results.items():
+            print(f"=== {slide_key} ===")
+            if not content_elements:
+                print("  No content elements found")
+            else:
+                self._display_slide_content(content_elements, detailed)
+            print()  # Empty line between slides
 
     async def handle_slides_content_remove(self, args):
         """Handle removing content from slides."""
@@ -799,6 +906,22 @@ class GodriCLI:
 
         except Exception as e:
             self.logger.error("Failed to download presentation: %s", str(e))
+            sys.exit(1)
+
+    async def handle_mcp(self, args):
+        """Handle MCP server command."""
+        try:
+            if args.transport == "stdio":
+                self.logger.info("Starting MCP server with stdio transport")
+                print("Starting Godri MCP server with stdio transport...")
+                await mcp.run_stdio_async()
+            elif args.transport == "http":
+                self.logger.info("Starting MCP server with HTTP transport on %s:%d", args.host, args.port)
+                print(f"Starting Godri MCP server on http://{args.host}:{args.port}")
+                await mcp.run_streamable_http_async()
+
+        except Exception as e:
+            self.logger.error("MCP server failed: %s", str(e))
             sys.exit(1)
 
     def create_parser(self):
@@ -1105,9 +1228,19 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
         content_add_parser.add_argument("--format", help="Format options as JSON (similar to sheets formatting)")
 
         # slides content list
-        content_list_parser = content_subparsers.add_parser("list", help="List content in slide")
+        content_list_parser = content_subparsers.add_parser("list", help="List content in slide(s)")
         content_list_parser.add_argument("presentation_id", help="Presentation ID")
-        content_list_parser.add_argument("slide_id", help="Slide ID")
+        content_list_parser.add_argument(
+            "slides",
+            nargs="*",
+            help="Slide numbers (1,2,3) or API object IDs. Use --all for all slides, or leave empty for all slides",
+        )
+        content_list_parser.add_argument(
+            "--all", action="store_true", help="List content for all slides in presentation"
+        )
+        content_list_parser.add_argument(
+            "--detailed", action="store_true", help="Show detailed formatting and properties information"
+        )
 
         # slides content remove
         content_remove_parser = content_subparsers.add_parser("remove", help="Remove content from slide")
@@ -1142,6 +1275,12 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
         translate_parser.add_argument("target_language", help="Target language code (e.g., 'fr', 'es')")
         translate_parser.add_argument("--source-language", "-s", help="Source language code")
 
+        # MCP command
+        mcp_parser = subparsers.add_parser("mcp", help="Run MCP server")
+        mcp_parser.add_argument("transport", choices=["stdio", "http"], help="Transport type (stdio or http)")
+        mcp_parser.add_argument("--host", default="localhost", help="Host for HTTP transport (default: localhost)")
+        mcp_parser.add_argument("--port", type=int, default=8000, help="Port for HTTP transport (default: 8000)")
+
         return parser
 
     async def run(self, args=None):
@@ -1156,11 +1295,13 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
             parser.print_help()
             return
 
-        try:
-            await self.initialize_services()
-        except Exception as e:
-            self.logger.error("Service initialization failed: %s", str(e))
-            sys.exit(1)
+        # MCP server handles its own service initialization
+        if parsed_args.command != "mcp":
+            try:
+                await self.initialize_services()
+            except Exception as e:
+                self.logger.error("Service initialization failed: %s", str(e))
+                sys.exit(1)
 
         command_handlers = {
             "auth": self.handle_auth,
@@ -1169,6 +1310,7 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
             "sheets": self.handle_sheets,
             "slides": self.handle_slides,
             "translate": self.handle_translate,
+            "mcp": self.handle_mcp,
         }
 
         handler = command_handlers.get(parsed_args.command)
@@ -1179,12 +1321,19 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
             sys.exit(1)
 
 
-async def main():
-    """Main entry point."""
+def main():
+    """Main entry point for CLI."""
+    setup_logging()
+    cli = GodriCLI()
+    asyncio.run(cli.run())
+
+
+async def async_main():
+    """Async main entry point."""
     setup_logging()
     cli = GodriCLI()
     await cli.run()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

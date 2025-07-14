@@ -472,33 +472,214 @@ class SlidesService:
         return self.delete_slide(presentation_id, slide_id)
 
     # Content Management Methods
-    def list_slide_content(self, presentation_id: str, slide_id: str) -> List[Dict[str, Any]]:
+    def list_slide_content(self, presentation_id: str, slide_identifier: str) -> List[Dict[str, Any]]:
         """List all content elements in a slide.
 
         Args:
             presentation_id: Presentation ID
-            slide_id: Slide ID
+            slide_identifier: Slide ID (API object ID) or slide number (1, 2, 3...)
 
         Returns:
             List of content elements with their properties
         """
-        self.logger.info("Listing content for slide %s in presentation: %s", slide_id, presentation_id)
+        self.logger.info("Listing content for slide %s in presentation: %s", slide_identifier, presentation_id)
 
         presentation = self.get_presentation(presentation_id)
-        content_elements = []
+        slides = presentation.get("slides", [])
 
-        for slide in presentation.get("slides", []):
-            if slide["objectId"] == slide_id:
-                for element in slide.get("pageElements", []):
-                    element_info = {
-                        "id": element["objectId"],
-                        "type": self._get_element_type(element),
-                        "properties": element,
-                    }
-                    content_elements.append(element_info)
-                break
+        # Find the target slide
+        target_slide = self._find_slide_by_identifier(slides, slide_identifier)
+        if not target_slide:
+            available_ids = [f"{i+1} ({slide['objectId']})" for i, slide in enumerate(slides)]
+            raise ValueError(f"Slide '{slide_identifier}' not found. Available slides: {', '.join(available_ids)}")
+
+        content_elements = []
+        for element in target_slide.get("pageElements", []):
+            element_info = self._extract_detailed_element_info(element)
+            content_elements.append(element_info)
 
         return content_elements
+
+    def list_multiple_slides_content(
+        self, presentation_id: str, slide_identifiers: List[str] = None
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """List content elements for multiple slides or all slides.
+
+        Args:
+            presentation_id: Presentation ID
+            slide_identifiers: List of slide identifiers (numbers or IDs). None for all slides.
+
+        Returns:
+            Dictionary mapping slide info to content elements
+        """
+        self.logger.info("Listing content for multiple slides in presentation: %s", presentation_id)
+
+        presentation = self.get_presentation(presentation_id)
+        slides = presentation.get("slides", [])
+
+        if slide_identifiers is None:
+            # List all slides
+            target_slides = [(i + 1, slide) for i, slide in enumerate(slides)]
+        else:
+            # Find specified slides
+            target_slides = []
+            for identifier in slide_identifiers:
+                slide = self._find_slide_by_identifier(slides, identifier)
+                if slide:
+                    slide_num = next((i + 1 for i, s in enumerate(slides) if s["objectId"] == slide["objectId"]), "?")
+                    target_slides.append((slide_num, slide))
+
+        results = {}
+        for slide_num, slide in target_slides:
+            slide_key = f"Slide {slide_num} ({slide['objectId']})"
+            content_elements = []
+            for element in slide.get("pageElements", []):
+                element_info = self._extract_detailed_element_info(element)
+                content_elements.append(element_info)
+            results[slide_key] = content_elements
+
+        return results
+
+    def _find_slide_by_identifier(self, slides: List[Dict[str, Any]], identifier: str) -> Optional[Dict[str, Any]]:
+        """Find slide by number (1,2,3...) or API object ID."""
+        # Try as slide number first
+        try:
+            slide_number = int(identifier)
+            if 1 <= slide_number <= len(slides):
+                return slides[slide_number - 1]  # Convert to 0-based index
+        except ValueError:
+            pass
+
+        # Try as API object ID
+        for slide in slides:
+            if slide["objectId"] == identifier:
+                return slide
+
+        return None
+
+    def _extract_detailed_element_info(self, element: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract detailed information from a page element."""
+        element_info = {
+            "id": element["objectId"],
+            "type": self._get_element_type(element),
+        }
+
+        # Extract size and position
+        if "size" in element:
+            size = element["size"]
+            element_info["size"] = {
+                "width": f"{size['width']['magnitude']} {size['width']['unit']}",
+                "height": f"{size['height']['magnitude']} {size['height']['unit']}",
+            }
+
+        if "transform" in element:
+            transform = element["transform"]
+            element_info["position"] = {
+                "x": f"{transform.get('translateX', 0)} {transform.get('unit', 'EMU')}",
+                "y": f"{transform.get('translateY', 0)} {transform.get('unit', 'EMU')}",
+                "scaleX": transform.get("scaleX", 1),
+                "scaleY": transform.get("scaleY", 1),
+            }
+
+        # Extract content based on type
+        if "shape" in element:
+            shape = element["shape"]
+            element_info["shape_type"] = shape.get("shapeType", "UNKNOWN")
+
+            # Extract text content
+            if "text" in shape:
+                text_content = self._extract_text_from_shape(shape["text"])
+                if text_content:
+                    element_info["text_content"] = text_content
+                    element_info["text_details"] = self._extract_text_formatting(shape["text"])
+
+            # Extract shape properties
+            if "shapeProperties" in shape:
+                element_info["shape_properties"] = self._extract_shape_properties(shape["shapeProperties"])
+
+        elif "image" in element:
+            image = element["image"]
+            element_info["image_properties"] = {
+                "content_url": image.get("contentUrl"),
+                "source_url": image.get("sourceUrl"),
+            }
+
+        elif "table" in element:
+            table = element["table"]
+            element_info["table_info"] = {"rows": table.get("rows", 0), "columns": table.get("columns", 0)}
+            # Extract table cell contents
+            element_info["table_contents"] = self._extract_table_contents(table)
+
+        return element_info
+
+    def _extract_text_from_shape(self, text_data: Dict[str, Any]) -> str:
+        """Extract plain text content from shape text data."""
+        text_content = ""
+        for text_element in text_data.get("textElements", []):
+            if "textRun" in text_element:
+                content = text_element["textRun"].get("content", "")
+                text_content += content
+        return text_content.strip()
+
+    def _extract_text_formatting(self, text_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extract text formatting details."""
+        formatting_details = []
+        for text_element in text_data.get("textElements", []):
+            if "textRun" in text_element:
+                text_run = text_element["textRun"]
+                detail = {"content": text_run.get("content", ""), "end_index": text_element.get("endIndex", 0)}
+                if "style" in text_run:
+                    style = text_run["style"]
+                    detail["style"] = {
+                        "bold": style.get("bold", False),
+                        "italic": style.get("italic", False),
+                        "underline": style.get("underline", False),
+                        "font_family": style.get("fontFamily"),
+                        "font_size": style.get("fontSize", {}).get("magnitude") if "fontSize" in style else None,
+                    }
+                    if "foregroundColor" in style:
+                        color = style["foregroundColor"].get("opaqueColor", {}).get("rgbColor", {})
+                        detail["style"][
+                            "text_color"
+                        ] = f"rgb({color.get('red', 0):.2f}, {color.get('green', 0):.2f}, {color.get('blue', 0):.2f})"
+                formatting_details.append(detail)
+        return formatting_details
+
+    def _extract_shape_properties(self, shape_props: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract shape visual properties."""
+        properties = {}
+
+        if "shapeBackgroundFill" in shape_props:
+            bg_fill = shape_props["shapeBackgroundFill"]
+            if "solidFill" in bg_fill and "color" in bg_fill["solidFill"]:
+                color = bg_fill["solidFill"]["color"].get("rgbColor", {})
+                properties["background_color"] = (
+                    f"rgb({color.get('red', 0):.2f}, {color.get('green', 0):.2f}, {color.get('blue', 0):.2f})"
+                )
+
+        if "outline" in shape_props:
+            outline = shape_props["outline"]
+            if "weight" in outline:
+                properties["border_width"] = f"{outline['weight']['magnitude']} {outline['weight']['unit']}"
+            properties["border_style"] = outline.get("dashStyle", "SOLID")
+
+        return properties
+
+    def _extract_table_contents(self, table_data: Dict[str, Any]) -> List[List[str]]:
+        """Extract text contents from table cells."""
+        contents = []
+        table_rows = table_data.get("tableRows", [])
+
+        for row in table_rows:
+            row_contents = []
+            for cell in row.get("tableCells", []):
+                cell_text = ""
+                if "text" in cell:
+                    cell_text = self._extract_text_from_shape(cell["text"])
+                row_contents.append(cell_text)
+            contents.append(row_contents)
+
+        return contents
 
     def _get_element_type(self, element: Dict[str, Any]) -> str:
         """Determine the type of page element."""

@@ -333,10 +333,37 @@ godri slides remove "PRESENTATION_ID" "SLIDE_ID"
 ```
 
 #### Content Management
-```bash
-# List content in slide
-godri slides content list "PRESENTATION_ID" "SLIDE_ID"
 
+**Enhanced Content Listing with Slide Number Support:**
+```bash
+# List content in specific slide by number (user-friendly)
+godri slides content list "PRESENTATION_ID" 2
+
+# List content in specific slide by API object ID (for precision)
+godri slides content list "PRESENTATION_ID" "SLIDES_API1220751402_0"
+
+# List content in multiple specific slides
+godri slides content list "PRESENTATION_ID" 1 2 3
+
+# List content for all slides in presentation
+godri slides content list "PRESENTATION_ID" --all
+godri slides content list "PRESENTATION_ID"  # empty slides list = all slides
+
+# Show detailed formatting and properties
+godri slides content list "PRESENTATION_ID" 2 --detailed
+```
+
+**Content Display Features:**
+- **Text Content**: Shows actual text with formatting (bold, italic, font, size, color)
+- **Size & Position**: Element dimensions and coordinates in EMU units
+- **Shape Properties**: Background colors, borders, shape types
+- **Table Contents**: Row-by-row table cell contents (shows empty cells)
+- **Image Properties**: Content URLs and source URLs
+- **Text Formatting**: Font family, size, style attributes
+- **Detailed Mode**: Additional scaling factors and advanced properties
+
+**Adding Content:**
+```bash
 # Add text content
 godri slides content add "PRESENTATION_ID" "SLIDE_ID" text "Hello World" --x 100 --y 100 --width 300 --height 50
 
@@ -477,6 +504,61 @@ for file in *.txt; do
     godri drive upload "$file" --folder-id "FOLDER_ID"
 done
 ```
+
+## MCP (Model Context Protocol) Server
+
+Godri includes an MCP server that provides Google Workspace integration for AI assistants and other applications.
+
+### Starting the MCP Server
+
+```bash
+# Start MCP server with stdio transport (for Claude Desktop and other MCP clients)
+godri mcp --transport stdio
+
+# Start MCP server with HTTP transport (for web applications)
+godri mcp --transport http --host localhost --port 8000
+```
+
+### Available MCP Tools
+
+**Enhanced Slides Content Tools:**
+- `slides_content_list(presentation_id, slide_identifier="", all_slides=False)` - List detailed content in slides with enhanced formatting information
+  - Supports slide numbers (1, 2, 3) or API object IDs
+  - Set `all_slides=True` to list content for all slides
+  - Returns detailed text content, formatting, size, position, and properties
+
+**Drive Tools:**
+- `drive_search(query, name, mime_type, limit)` - Search files and folders
+- `drive_upload(file_path, folder_id, name)` - Upload files
+- `drive_download(file_id, output_path, smart)` - Download files with smart conversion
+- `drive_folder_create(name, parent_id)` - Create folders
+- `drive_folder_delete(file_id)` - Delete files/folders
+
+**Docs Tools:**
+- `docs_createdocument(title, folder_id, content, markdown)` - Create documents
+- `docs_read(document_id, plain_text)` - Read document content
+- `docs_update(document_id, content, markdown, replace, index)` - Update documents
+- `docs_translate(document_id, target_language, source_language, start_index, end_index)` - Translate documents
+
+**Sheets Tools:**
+- `sheets_createdocument(title, folder_id)` - Create spreadsheets
+- `sheets_read(spreadsheet_id)` - List sheets
+- `sheets_values_read(spreadsheet_id, sheet_name, range_name)` - Read data
+- `sheets_values_set(spreadsheet_id, range_name, values, formula)` - Set values
+- `sheets_translate(spreadsheet_id, range_name, target_language, source_language)` - Translate ranges
+
+**Slides Tools:**
+- `slides_createdocument(title, folder_id, theme)` - Create presentations
+- `slides_download(presentation_id, format_type, output_path)` - Download presentations
+- `slides_add(presentation_id, layout, position)` - Add slides
+- `slides_content_add(presentation_id, slide_id, content_type, content, x, y, width, height)` - Add content
+
+**Translation Tools:**
+- `translate_text(text, target_language, source_language)` - Translate text
+
+### MCP Configuration
+
+The MCP server automatically uses the same authentication as the CLI. Ensure you've run `godri auth` before starting the MCP server.
 
 ## Development
 
