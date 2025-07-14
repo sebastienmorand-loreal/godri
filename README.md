@@ -688,6 +688,151 @@ For issues, feature requests, or questions:
 3. Verify API quotas in Google Cloud Console
 4. Ensure all required APIs are enabled
 
+## Integration with AI Assistants
+
+### Claude Code Integration
+
+You can integrate Godri with Claude Code to enable AI assistant access to your Google Workspace documents and data.
+
+#### Option 1: MCP Server Integration (Recommended)
+
+1. **Start the MCP server:**
+   ```bash
+   cd /path/to/godri
+   uv run src/godri/main.py mcp stdio
+   ```
+
+2. **Configure Claude Code to use the MCP server:**
+   Add to your Claude Code configuration (`~/.claude/mcp_servers.json`):
+   ```json
+   {
+     "godri": {
+       "command": "uv",
+       "args": ["run", "src/godri/main.py", "mcp", "stdio"],
+       "cwd": "/path/to/godri"
+     }
+   }
+   ```
+
+3. **Available MCP Tools for Claude:**
+   - Drive operations (search, upload, download, smart conversion)
+   - Document operations (create, read, update, translate)
+   - Spreadsheet operations (create, read sheets, manage values, formatting, translation)
+   - Presentation operations (create, add slides, manage content, download, copy)
+   - Translation services
+
+#### Option 2: Repository Integration
+
+1. **Clone this repository to your projects folder:**
+   ```bash
+   git clone https://github.com/sebastienmorand-loreal/godri.git
+   cd godri
+   uv sync
+   ```
+
+2. **Set up authentication:**
+   ```bash
+   export GODRI_CLIENT_FILE="/path/to/your/client_secret.json"
+   uv run src/godri/main.py auth
+   ```
+
+3. **Use with Claude Code:**
+   - Open the repository in Claude Code
+   - Claude can now read your code and help with development
+   - Use Claude to run commands like: `uv run src/godri/main.py drive search --name "document"`
+
+### Gemini CLI Integration
+
+Godri can be integrated with Google's Gemini CLI for enhanced AI-powered document analysis.
+
+#### Setup for Gemini CLI
+
+1. **Install Gemini CLI:**
+   ```bash
+   pip install google-generativeai
+   ```
+
+2. **Create a wrapper script** (`gemini-godri.py`):
+   ```python
+   #!/usr/bin/env python3
+   import subprocess
+   import sys
+   import json
+   
+   def run_godri_command(args):
+       """Run godri command and return results"""
+       try:
+           result = subprocess.run(
+               ['uv', 'run', 'src/godri/main.py'] + args,
+               capture_output=True,
+               text=True,
+               cwd='/path/to/godri'
+           )
+           return result.stdout
+       except Exception as e:
+           return f"Error: {e}"
+   
+   # Example: Search and analyze documents
+   if __name__ == "__main__":
+       if len(sys.argv) > 1 and sys.argv[1] == "analyze-docs":
+           # Search for documents
+           docs = run_godri_command(['drive', 'search', '--name', sys.argv[2], '--limit', '10'])
+           print(f"Found documents: {docs}")
+           
+           # Use Gemini to analyze document content
+           # Add your Gemini analysis logic here
+   ```
+
+3. **Usage examples:**
+   ```bash
+   # Search and analyze documents
+   python gemini-godri.py analyze-docs "quarterly report"
+   
+   # Translate documents with AI assistance
+   python gemini-godri.py translate-with-ai "document_id" "target_language"
+   ```
+
+#### Advanced Gemini Integration
+
+Create specialized scripts for common workflows:
+
+1. **Document Analysis Script:**
+   ```python
+   # Use godri to read documents, Gemini to analyze content
+   doc_content = run_godri_command(['docs', 'read', document_id, '--plain-text'])
+   # Send to Gemini for analysis
+   ```
+
+2. **Intelligent Translation:**
+   ```python
+   # Use godri to read, Gemini to improve translation, godri to update
+   original = run_godri_command(['docs', 'read', document_id])
+   # Gemini analysis for context-aware translation
+   # Update with godri
+   ```
+
+3. **Smart Spreadsheet Analysis:**
+   ```python
+   # Use godri to read spreadsheet data
+   data = run_godri_command(['sheets', 'values', 'read', spreadsheet_id, '--json'])
+   # Use Gemini for data analysis and insights
+   ```
+
+### Benefits of AI Integration
+
+- **Document Intelligence:** AI can analyze document content and suggest improvements
+- **Smart Search:** Use natural language to find documents across Google Drive
+- **Automated Translation:** Context-aware translation with formatting preservation
+- **Data Analysis:** Intelligent analysis of spreadsheet data and presentation content
+- **Workflow Automation:** Combine godri operations with AI decision-making
+
+### Security Considerations
+
+- The MCP server inherits the same OAuth2 authentication as the CLI
+- All Google API communication remains secure (HTTPS)
+- AI assistants only have access to tools you explicitly enable
+- Consider using read-only operations for sensitive documents
+
 ## License
 
 Personal/Educational use. Ensure compliance with Google API Terms of Service.
