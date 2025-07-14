@@ -546,6 +546,8 @@ class GodriCLI:
             await self.handle_sheet_columns(args)
         elif args.sheets_command == "rows":
             await self.handle_sheet_rows(args)
+        elif args.sheets_command == "copy":
+            await self.handle_sheets_copy(args)
         elif args.sheets_command == "translate":
             await self.handle_translate_sheet(args)
 
@@ -600,6 +602,8 @@ class GodriCLI:
             await self.handle_slides_content(args)
         elif args.slides_command == "download":
             await self.handle_slides_download(args)
+        elif args.slides_command == "copy":
+            await self.handle_slides_copy(args)
 
     async def handle_translate_doc(self, args):
         """Handle document translation."""
@@ -908,6 +912,74 @@ class GodriCLI:
             self.logger.error("Failed to download presentation: %s", str(e))
             sys.exit(1)
 
+    async def handle_slides_copy(self, args):
+        """Handle copying slides between presentations."""
+        try:
+            result = self.slides_service.copy_slides(
+                args.source_presentation_id,
+                args.target_presentation_id,
+                args.slides,
+                preserve_theme=not args.no_preserve_theme,
+                link_to_source=args.link_to_source,
+                target_position=getattr(args, "position", None),
+            )
+
+            print(f"Successfully copied {result['copied_slides']} slides")
+            print(f"Source: {args.source_presentation_id}")
+            print(f"Target: {args.target_presentation_id}")
+            print(f"New slide IDs: {', '.join(result['new_slide_ids'])}")
+            print(f"Theme preserved: {result['preserve_theme']}")
+            print(f"Linked to source: {result['link_to_source']}")
+
+        except Exception as e:
+            self.logger.error("Failed to copy slides: %s", str(e))
+            sys.exit(1)
+
+    async def handle_sheets_copy(self, args):
+        """Handle copying sheets between spreadsheets."""
+        try:
+            if len(args.sheet_names) == 1 and args.target_name:
+                # Single sheet copy with custom name
+                result = self.sheets_service.copy_sheet(
+                    args.source_spreadsheet_id,
+                    args.target_spreadsheet_id,
+                    args.sheet_names[0],
+                    target_sheet_name=args.target_name,
+                    preserve_formatting=not args.no_preserve_formatting,
+                )
+                print(f"Successfully copied sheet '{result['source_sheet']}' to '{result['target_sheet']}'")
+                print(f"New sheet ID: {result['new_sheet_id']}")
+            else:
+                # Multiple sheets copy
+                if args.target_name:
+                    print("Warning: --target-name ignored when copying multiple sheets")
+
+                result = self.sheets_service.copy_multiple_sheets(
+                    args.source_spreadsheet_id,
+                    args.target_spreadsheet_id,
+                    args.sheet_names,
+                    preserve_formatting=not args.no_preserve_formatting,
+                )
+
+                print(f"Sheet copy operation completed:")
+                print(f"Total sheets: {result['total_sheets']}")
+                print(f"Successful copies: {result['successful_copies']}")
+                print(f"Failed copies: {result['total_sheets'] - result['successful_copies']}")
+
+                for sheet_result in result["results"]:
+                    if "error" in sheet_result:
+                        print(f"  ❌ {sheet_result['source_sheet']}: {sheet_result['error']}")
+                    else:
+                        print(f"  ✅ {sheet_result['source_sheet']} → {sheet_result['target_sheet']}")
+
+            print(f"Source: {args.source_spreadsheet_id}")
+            print(f"Target: {args.target_spreadsheet_id}")
+            print(f"Formatting preserved: {not args.no_preserve_formatting}")
+
+        except Exception as e:
+            self.logger.error("Failed to copy sheets: %s", str(e))
+            sys.exit(1)
+
     async def handle_mcp(self, args):
         """Handle MCP server command."""
         try:
@@ -1131,6 +1203,20 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
         rows_remove_parser.add_argument("--count", "-c", type=int, default=1, help="Number of rows to delete")
         rows_remove_parser.add_argument("--sheet-name", "-s", help="Sheet name (default: first sheet)")
 
+        # sheets copy
+        sheets_copy_parser = sheets_subparsers.add_parser("copy", help="Copy sheets between spreadsheets")
+        sheets_copy_parser.add_argument("source_spreadsheet_id", help="Source spreadsheet ID")
+        sheets_copy_parser.add_argument("target_spreadsheet_id", help="Target spreadsheet ID")
+        sheets_copy_parser.add_argument("sheet_names", nargs="+", help="Sheet names to copy")
+        sheets_copy_parser.add_argument(
+            "--target-name", help="Name for copied sheet (only valid when copying single sheet)"
+        )
+        sheets_copy_parser.add_argument(
+            "--no-preserve-formatting",
+            action="store_true",
+            help="Don't preserve cell formatting (default: preserve formatting)",
+        )
+
         # sheets translate
         sheets_translate_parser = sheets_subparsers.add_parser("translate", help="Translate sheet range content")
         sheets_translate_parser.add_argument("spreadsheet_id", help="Spreadsheet ID")
@@ -1268,6 +1354,23 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
             "-r",
             help="Slide range to download (e.g., '1-3', '1,3,5', '2-4,6-8'). If not specified, downloads all slides",
         )
+
+        # slides copy
+        slides_copy_parser = slides_subparsers.add_parser("copy", help="Copy slides between presentations")
+        slides_copy_parser.add_argument("source_presentation_id", help="Source presentation ID")
+        slides_copy_parser.add_argument("target_presentation_id", help="Target presentation ID")
+        slides_copy_parser.add_argument(
+            "slides", nargs="+", help="Slide numbers, IDs, or ranges to copy (e.g., '1-3', '5', '1,3,5')"
+        )
+        slides_copy_parser.add_argument(
+            "--no-preserve-theme",
+            action="store_true",
+            help="Don't preserve original theme/formatting (default: preserve theme)",
+        )
+        slides_copy_parser.add_argument(
+            "--link-to-source", action="store_true", help="Link slides to source presentation (default: no linking)"
+        )
+        slides_copy_parser.add_argument("--position", type=int, help="Position to insert slides (default: at end)")
 
         # TRANSLATE command
         translate_parser = subparsers.add_parser("translate", help="Translate text")

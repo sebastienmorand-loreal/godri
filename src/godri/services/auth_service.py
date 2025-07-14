@@ -20,20 +20,27 @@ class AuthService:
         "https://www.googleapis.com/auth/cloud-translation",
     ]
 
-    def __init__(self):
+    def __init__(self, oauth_token: Optional[str] = None):
         self.logger = logging.getLogger(__name__)
         self.credentials: Optional[Credentials] = None
+        self.oauth_token = oauth_token
         self.client_secret_file = os.getenv("GODRI_CLIENT_FILE")
 
-        if not self.client_secret_file:
-            raise ValueError("GODRI_CLIENT_FILE environment variable is required")
+        if not self.oauth_token and not self.client_secret_file:
+            raise ValueError("Either oauth_token or GODRI_CLIENT_FILE environment variable is required")
 
-        if not os.path.exists(self.client_secret_file):
+        if self.client_secret_file and not os.path.exists(self.client_secret_file):
             raise FileNotFoundError(f"Client secret file not found: {self.client_secret_file}")
 
     async def authenticate(self) -> Credentials:
         """Authenticate user and return credentials."""
         self.logger.info("Starting authentication process")
+
+        if self.oauth_token:
+            self.logger.info("Using OAuth token from headers")
+            self.credentials = Credentials(token=self.oauth_token)
+            self.logger.info("Authentication successful with OAuth token")
+            return self.credentials
 
         token_file = os.path.expanduser("~/.godri-token.json")
 

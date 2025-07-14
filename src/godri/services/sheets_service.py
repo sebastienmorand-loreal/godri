@@ -953,3 +953,172 @@ class SheetsService:
         except Exception as e:
             self.logger.error("Failed to copy formatting: %s", str(e))
             raise
+
+    # Copy Operations
+    def copy_sheet(
+        self,
+        source_spreadsheet_id: str,
+        target_spreadsheet_id: str,
+        source_sheet_name: str,
+        target_sheet_name: Optional[str] = None,
+        preserve_formatting: bool = True,
+    ) -> Dict[str, Any]:
+        """Copy a sheet from one spreadsheet to another.
+
+        Args:
+            source_spreadsheet_id: Source spreadsheet ID
+            target_spreadsheet_id: Target spreadsheet ID
+            source_sheet_name: Name of sheet to copy
+            target_sheet_name: Name for new sheet (default: source name with suffix)
+            preserve_formatting: Whether to preserve cell formatting (default: True)
+
+        Returns:
+            Dictionary with copy results and new sheet info
+        """
+        self.logger.info(
+            "Copying sheet '%s' from %s to %s",
+            source_sheet_name,
+            source_spreadsheet_id,
+            target_spreadsheet_id,
+        )
+
+        # Get source sheet ID
+        source_sheet_id = self.get_sheet_id_by_name(source_spreadsheet_id, source_sheet_name)
+        if source_sheet_id is None:
+            raise ValueError(f"Sheet '{source_sheet_name}' not found in source spreadsheet")
+
+        # Determine target sheet name
+        if target_sheet_name is None:
+            target_sheet_name = f"{source_sheet_name} (Copy)"
+
+        # Check if target sheet name already exists and make it unique
+        target_sheets = self.list_sheets(target_spreadsheet_id)
+        existing_names = [sheet["title"] for sheet in target_sheets]
+
+        original_target_name = target_sheet_name
+        counter = 1
+        while target_sheet_name in existing_names:
+            target_sheet_name = f"{original_target_name} ({counter})"
+            counter += 1
+
+        try:
+            # Step 1: Copy the sheet structure using Google Sheets API
+            copy_request = {
+                "destinationSpreadsheetId": target_spreadsheet_id,
+            }
+
+            result = (
+                self.service.spreadsheets()
+                .sheets()
+                .copyTo(
+                    spreadsheetId=source_spreadsheet_id,
+                    sheetId=source_sheet_id,
+                    body=copy_request,
+                )
+                .execute()
+            )
+
+            new_sheet_id = result["sheetId"]
+            copied_sheet_title = result["title"]
+
+            # Step 2: Rename the copied sheet if needed
+            if copied_sheet_title != target_sheet_name:
+                rename_request = {
+                    "requests": [
+                        {
+                            "updateSheetProperties": {
+                                "properties": {
+                                    "sheetId": new_sheet_id,
+                                    "title": target_sheet_name,
+                                },
+                                "fields": "title",
+                            }
+                        }
+                    ]
+                }
+
+                self.service.spreadsheets().batchUpdate(
+                    spreadsheetId=target_spreadsheet_id, body=rename_request
+                ).execute()
+
+            self.logger.info(
+                "Successfully copied sheet '%s' to '%s' (ID: %d)",
+                source_sheet_name,
+                target_sheet_name,
+                new_sheet_id,
+            )
+
+            return {
+                "source_spreadsheet": source_spreadsheet_id,
+                "target_spreadsheet": target_spreadsheet_id,
+                "source_sheet": source_sheet_name,
+                "target_sheet": target_sheet_name,
+                "new_sheet_id": new_sheet_id,
+                "preserve_formatting": preserve_formatting,
+            }
+
+        except Exception as e:
+            self.logger.error("Failed to copy sheet: %s", str(e))
+            raise
+
+    def copy_multiple_sheets(
+        self,
+        source_spreadsheet_id: str,
+        target_spreadsheet_id: str,
+        sheet_names: List[str],
+        preserve_formatting: bool = True,
+    ) -> Dict[str, Any]:
+        """Copy multiple sheets from one spreadsheet to another.
+
+        Args:
+            source_spreadsheet_id: Source spreadsheet ID
+            target_spreadsheet_id: Target spreadsheet ID
+            sheet_names: List of sheet names to copy
+            preserve_formatting: Whether to preserve cell formatting (default: True)
+
+        Returns:
+            Dictionary with copy results for all sheets
+        """
+        self.logger.info(
+            "Copying %d sheets from %s to %s",
+            len(sheet_names),
+            source_spreadsheet_id,
+            target_spreadsheet_id,
+        )
+
+        results = []
+        for sheet_name in sheet_names:
+            try:
+                result = self.copy_sheet(
+                    source_spreadsheet_id,
+                    target_spreadsheet_id,
+                    sheet_name,
+                    preserve_formatting=preserve_formatting,
+                )
+                results.append(result)
+            except Exception as e:
+                self.logger.error("Failed to copy sheet '%s': %s", sheet_name, str(e))
+                results.append(
+                    {
+                        "source_sheet": sheet_name,
+                        "error": str(e),
+                        "success": False,
+                    }
+                )
+
+        successful_copies = len([r for r in results if "error" not in r])
+
+        self.logger.info(
+            "Sheet copying completed: %d successful, %d failed",
+            successful_copies,
+            len(results) - successful_copies,
+        )
+
+        return {
+            "source_spreadsheet": source_spreadsheet_id,
+            "target_spreadsheet": target_spreadsheet_id,
+            "results": results,
+            "successful_copies": successful_copies,
+            "total_sheets": len(sheet_names),
+            "preserve_formatting": preserve_formatting,
+        }
