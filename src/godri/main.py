@@ -597,6 +597,8 @@ class GodriCLI:
             await self.handle_slides_remove(args)
         elif args.slides_command == "content":
             await self.handle_slides_content(args)
+        elif args.slides_command == "download":
+            await self.handle_slides_download(args)
 
     async def handle_translate_doc(self, args):
         """Handle document translation."""
@@ -767,6 +769,37 @@ class GodriCLI:
         """Handle moving content on slides."""
         result = self.slides_service.move_content(args.presentation_id, args.element_id, args.x, args.y)
         print(f"Content element {args.element_id} moved to position ({args.x}, {args.y})")
+
+    async def handle_slides_download(self, args):
+        """Handle downloading slides."""
+        try:
+            result = await self.slides_service.download_presentation(
+                args.presentation_id, args.output_path, args.format, getattr(args, "range", None)
+            )
+
+            if args.format.lower() in ["png", "jpeg"]:
+                print(f"Slides downloaded as {args.format.upper()} images to directory: {result}")
+                # List downloaded files
+                import os
+
+                files = [f for f in os.listdir(result) if f.startswith("slide_")]
+                files.sort()
+                print(f"Downloaded {len(files)} slides:")
+                for file in files[:5]:  # Show first 5 files
+                    print(f"  - {file}")
+                if len(files) > 5:
+                    print(f"  ... and {len(files) - 5} more files")
+            else:
+                print(f"Presentation downloaded as {args.format.upper()}: {result}")
+                # Show file size
+                import os
+
+                size_mb = os.path.getsize(result) / (1024 * 1024)
+                print(f"File size: {size_mb:.1f} MB")
+
+        except Exception as e:
+            self.logger.error("Failed to download presentation: %s", str(e))
+            sys.exit(1)
 
     def create_parser(self):
         """Create argument parser with hierarchical command structure."""
@@ -1087,6 +1120,21 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
         content_move_parser.add_argument("element_id", help="Element ID to move")
         content_move_parser.add_argument("x", type=float, help="New X position")
         content_move_parser.add_argument("y", type=float, help="New Y position")
+
+        # slides download
+        slides_download_parser = slides_subparsers.add_parser("download", help="Download presentation")
+        slides_download_parser.add_argument("presentation_id", help="Presentation ID")
+        slides_download_parser.add_argument("output_path", help="Output file path or directory (for images)")
+        slides_download_parser.add_argument(
+            "format",
+            choices=["pdf", "pptx", "png", "jpeg"],
+            help="Export format (pdf, pptx for documents; png, jpeg for images)",
+        )
+        slides_download_parser.add_argument(
+            "--range",
+            "-r",
+            help="Slide range to download (e.g., '1-3', '1,3,5', '2-4,6-8'). If not specified, downloads all slides",
+        )
 
         # TRANSLATE command
         translate_parser = subparsers.add_parser("translate", help="Translate text")

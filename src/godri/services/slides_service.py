@@ -382,7 +382,7 @@ class SlidesService:
         # Full theme implementation requires access to Google's theme templates
         self.logger.info("Theme %s acknowledged for presentation: %s", theme_name, presentation_id)
         self.logger.info("Note: Full theme application requires Google Slides theme templates")
-        
+
         return {"acknowledged": True, "theme": theme_name, "message": "Theme setting acknowledged"}
 
     # Layout Management Methods
@@ -939,3 +939,179 @@ class SlidesService:
             return result
 
         return {}
+
+    # Download Methods
+    async def download_presentation(
+        self, presentation_id: str, output_path: str, format_type: str = "pdf", slides_range: Optional[str] = None
+    ) -> str:
+        """Download presentation in specified format.
+
+        Args:
+            presentation_id: Presentation ID
+            output_path: Output file path or directory (for images)
+            format_type: Export format (pdf, pptx, png, jpeg)
+            slides_range: Slide range specification (e.g., "1-3", "1,3,5", "2-4,6-8")
+
+        Returns:
+            Final output path or directory
+        """
+        import os
+        import requests
+        from pathlib import Path
+
+        self.logger.info("Downloading presentation %s as %s", presentation_id, format_type.upper())
+
+        # Get presentation info for slide count validation
+        presentation = self.get_presentation(presentation_id)
+        total_slides = len(presentation.get("slides", []))
+
+        # Parse slide range
+        slide_indices = self._parse_slide_range(slides_range, total_slides) if slides_range else None
+
+        if format_type.lower() in ["png", "jpeg"]:
+            return await self._download_as_images(
+                presentation_id, output_path, format_type, slide_indices, total_slides
+            )
+        else:
+            return await self._download_as_document(presentation_id, output_path, format_type, slide_indices)
+
+    def _parse_slide_range(self, range_str: str, total_slides: int) -> List[int]:
+        """Parse slide range string into list of 0-based slide indices.
+
+        Examples:
+        - "1-3" -> [0, 1, 2]
+        - "1,3,5" -> [0, 2, 4]
+        - "2-4,6-8" -> [1, 2, 3, 5, 6, 7]
+        """
+        indices = set()
+
+        for part in range_str.split(","):
+            part = part.strip()
+            if "-" in part:
+                # Range like "2-4"
+                start, end = map(int, part.split("-"))
+                # Convert to 0-based and validate
+                start_idx = max(0, start - 1)
+                end_idx = min(total_slides - 1, end - 1)
+                indices.update(range(start_idx, end_idx + 1))
+            else:
+                # Single slide like "3"
+                slide_num = int(part)
+                slide_idx = slide_num - 1  # Convert to 0-based
+                if 0 <= slide_idx < total_slides:
+                    indices.add(slide_idx)
+
+        return sorted(list(indices))
+
+    async def _download_as_document(
+        self, presentation_id: str, output_path: str, format_type: str, slide_indices: Optional[List[int]] = None
+    ) -> str:
+        """Download presentation as PDF or PPTX document."""
+        import os
+        import requests
+
+        # Get credentials for authenticated request
+        credentials = self.auth_service.credentials
+
+        # Build export URL
+        if format_type.lower() == "pdf":
+            export_url = f"https://docs.google.com/presentation/d/{presentation_id}/export/pdf"
+            if not output_path.lower().endswith(".pdf"):
+                output_path += ".pdf"
+        elif format_type.lower() == "pptx":
+            export_url = f"https://docs.google.com/presentation/d/{presentation_id}/export/pptx"
+            if not output_path.lower().endswith(".pptx"):
+                output_path += ".pptx"
+        else:
+            raise ValueError(f"Unsupported document format: {format_type}")
+
+        # Add slide range parameters if specified
+        params = {}
+        if slide_indices:
+            # Google Slides export uses 1-based slide numbers
+            slide_nums = [str(i + 1) for i in slide_indices]
+            params["range"] = ",".join(slide_nums)
+
+        # Make authenticated request
+        headers = {"Authorization": f"Bearer {credentials.token}"}
+
+        self.logger.info("Downloading from: %s", export_url)
+        response = requests.get(export_url, headers=headers, params=params, stream=True)
+        response.raise_for_status()
+
+        # Save to file
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        self.logger.info("Document saved to: %s", output_path)
+        return output_path
+
+    async def _download_as_images(
+        self,
+        presentation_id: str,
+        output_dir: str,
+        format_type: str,
+        slide_indices: Optional[List[int]] = None,
+        total_slides: int = 0,
+    ) -> str:
+        """Download presentation slides as individual images."""
+        import os
+        import requests
+        from pathlib import Path
+
+        # Create output directory
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+        # Get credentials for authenticated request
+        credentials = self.auth_service.credentials
+
+        # Determine which slides to download
+        if slide_indices:
+            slides_to_download = slide_indices
+        else:
+            slides_to_download = list(range(total_slides))
+
+        # Get slide object IDs
+        presentation = self.get_presentation(presentation_id)
+        slide_objects = presentation.get("slides", [])
+
+        headers = {"Authorization": f"Bearer {credentials.token}"}
+        downloaded_files = []
+
+        for slide_idx in slides_to_download:
+            if slide_idx >= len(slide_objects):
+                continue
+
+            slide_object_id = slide_objects[slide_idx]["objectId"]
+            slide_number = slide_idx + 1
+
+            # Build image export URL
+            if format_type.lower() == "png":
+                export_url = f"https://docs.google.com/presentation/d/{presentation_id}/export/png?id={presentation_id}&pageid={slide_object_id}"
+                file_extension = "png"
+            elif format_type.lower() == "jpeg":
+                export_url = f"https://docs.google.com/presentation/d/{presentation_id}/export/jpeg?id={presentation_id}&pageid={slide_object_id}"
+                file_extension = "jpeg"
+            else:
+                raise ValueError(f"Unsupported image format: {format_type}")
+
+            # Download image
+            self.logger.info("Downloading slide %d as %s", slide_number, format_type.upper())
+            response = requests.get(export_url, headers=headers, stream=True)
+            response.raise_for_status()
+
+            # Save image with slide number
+            filename = f"slide_{slide_number:03d}.{file_extension}"
+            filepath = os.path.join(output_dir, filename)
+
+            with open(filepath, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+            downloaded_files.append(filepath)
+            self.logger.info("Slide %d saved to: %s", slide_number, filepath)
+
+        self.logger.info("Downloaded %d slides to directory: %s", len(downloaded_files), output_dir)
+        return output_dir

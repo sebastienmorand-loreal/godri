@@ -369,6 +369,44 @@ Slides support similar formatting options to Google Sheets:
 --format '{"textFormat":{"bold":true,"italic":true,"fontSize":16,"fontFamily":"Calibri","foregroundColor":{"red":0.2,"green":0.2,"blue":0.8}}}'
 ```
 
+#### Download Presentation
+```bash
+# Download entire presentation as PDF
+godri slides download "PRESENTATION_ID" "/path/to/presentation.pdf" pdf
+
+# Download entire presentation as PowerPoint
+godri slides download "PRESENTATION_ID" "/path/to/presentation.pptx" pptx
+
+# Download specific slides as PDF (slides 1-3)
+godri slides download "PRESENTATION_ID" "/path/to/presentation.pdf" pdf --range "1-3"
+
+# Download selected slides as PDF (slides 1, 3, and 5)
+godri slides download "PRESENTATION_ID" "/path/to/presentation.pdf" pdf --range "1,3,5"
+
+# Download multiple ranges as PPTX (slides 2-4 and 6-8)
+godri slides download "PRESENTATION_ID" "/path/to/presentation.pptx" pptx --range "2-4,6-8"
+
+# Download all slides as PNG images to directory
+godri slides download "PRESENTATION_ID" "/path/to/images/" png
+
+# Download specific slides as JPEG images (slides 1-5)
+godri slides download "PRESENTATION_ID" "/path/to/images/" jpeg --range "1-5"
+```
+
+**Download Features:**
+- **PDF Export:** Complete presentation or specific slides as PDF document
+- **PPTX Export:** Native PowerPoint format with full fidelity
+- **Image Export:** Individual slides as PNG or JPEG files with numbered filenames
+- **Range Support:** Flexible slide selection (ranges, individual slides, multiple ranges)
+- **Directory Creation:** Automatic creation of output directories for images
+- **File Naming:** Images saved as `slide_001.png`, `slide_002.png`, etc.
+
+**Range Format Examples:**
+- `"1-3"` - Slides 1 through 3
+- `"1,3,5"` - Slides 1, 3, and 5 only  
+- `"2-4,6-8"` - Slides 2-4 and slides 6-8
+- `"1,3-5,7"` - Slide 1, slides 3-5, and slide 7
+
 ### Translation
 
 ```bash
