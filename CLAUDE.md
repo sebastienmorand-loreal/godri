@@ -80,7 +80,8 @@ godri/
 ```
 
 ### Dependencies Management
-- **Package Manager**: UV (`uv sync`, `uv add`, `uv run`)
+- **Package Manager**: UV (`uv install .`, `uv add`, `uv sync` for development)
+- **Installation**: `uv install .` (installs `godri` command globally)
 - **Python Version**: 3.11+
 - **Key Dependencies**: google-api-python-client, mcp, fastapi, aiofiles, aiohttp
 
@@ -88,31 +89,38 @@ godri/
 
 ### Development
 ```bash
-# Install dependencies
-uv sync
+# Option 1: Install package (development mode) - Recommended
+uv install -e .
+godri <command>
 
-# Run application
+# Option 2: Run directly from source (for local testing before install)
+uv sync
 uv run src/godri/main.py <command>
 
 # Format code (MANDATORY before commits)
 black -l 120 src/
 
 # Test authentication
-uv run src/godri/main.py auth
+godri auth                           # After install
+# OR
+uv run src/godri/main.py auth        # Direct from source
 
 # Start MCP server
-uv run src/godri/main.py mcp stdio
+godri mcp stdio                      # After install
+# OR
+uv run src/godri/main.py mcp stdio   # Direct from source
 ```
 
 ### Testing Copy Features
 ```bash
-# Test slide copying with ranges
+# After install (recommended)
+godri slides copy SOURCE_ID TARGET_ID "1-3,5"
+godri sheets copy SOURCE_ID TARGET_ID "Sheet1" "Sheet2"
+godri slides content list PRESENTATION_ID "1-3" --detailed
+
+# OR direct from source (for local testing)
 uv run src/godri/main.py slides copy SOURCE_ID TARGET_ID "1-3,5"
-
-# Test sheet copying
 uv run src/godri/main.py sheets copy SOURCE_ID TARGET_ID "Sheet1" "Sheet2"
-
-# Test content listing with ranges
 uv run src/godri/main.py slides content list PRESENTATION_ID "1-3" --detailed
 ```
 
