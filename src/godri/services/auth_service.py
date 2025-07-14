@@ -35,7 +35,7 @@ class AuthService:
         """Authenticate user and return credentials."""
         self.logger.info("Starting authentication process")
 
-        token_file = "token.json"
+        token_file = os.path.expanduser("~/.godri-token.json")
 
         if os.path.exists(token_file):
             self.logger.info("Loading existing credentials from %s", token_file)

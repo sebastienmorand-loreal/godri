@@ -54,7 +54,7 @@ First, authenticate with Google APIs:
 uv run src/godri/main.py auth
 ```
 
-This will open a browser window for OAuth consent and create a `token.json` file for subsequent requests.
+This will open a browser window for OAuth consent and create a `~/.godri-token.json` file for subsequent requests.
 
 ### File Operations
 
@@ -249,9 +249,9 @@ The tool includes comprehensive error handling and logging. Use the `--verbose` 
 
 ## Security Notes
 
-- The `token.json` file contains your authentication tokens - keep it secure
+- The `~/.godri-token.json` file contains your authentication tokens - keep it secure
 - The client secret file should also be kept secure and not committed to version control
-- Both files are excluded in the `.gitignore`
+- The client secret file is excluded in the `.gitignore`
 
 ## License
 
