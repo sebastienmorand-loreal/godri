@@ -696,34 +696,43 @@ You can integrate Godri with Claude Code to enable AI assistant access to your G
 
 #### Option 1: MCP Server Integration (Recommended)
 
-1. **Start the MCP server:**
+1. **Install Godri as a package:**
    ```bash
-   cd /path/to/godri
-   uv run src/godri/main.py mcp stdio
+   git clone https://github.com/sebastienmorand-loreal/godri.git
+   cd godri
+   uv install .
    ```
 
-2. **Configure Claude Code to use the MCP server:**
+2. **Set up authentication:**
+   ```bash
+   export GODRI_CLIENT_FILE="/path/to/your/client_secret.json"
+   godri auth
+   ```
+
+3. **Configure Claude Code to use the MCP server:**
    Add to your Claude Code configuration (`~/.claude/mcp_servers.json`):
    ```json
    {
      "godri": {
-       "command": "uv",
-       "args": ["run", "src/godri/main.py", "mcp", "stdio"],
-       "cwd": "/path/to/godri"
+       "command": "godri",
+       "args": ["mcp", "stdio"]
      }
    }
    ```
 
-3. **Available MCP Tools for Claude:**
+4. **Start using Godri tools in Claude:**
+   After configuration, Claude Code will have access to all Godri MCP tools:
    - Drive operations (search, upload, download, smart conversion)
    - Document operations (create, read, update, translate)
    - Spreadsheet operations (create, read sheets, manage values, formatting, translation)
    - Presentation operations (create, add slides, manage content, download, copy)
    - Translation services
 
-#### Option 2: Repository Integration
+#### Option 2: Development Mode Integration
 
-1. **Clone this repository to your projects folder:**
+For development or if you prefer to run from source:
+
+1. **Clone this repository:**
    ```bash
    git clone https://github.com/sebastienmorand-loreal/godri.git
    cd godri
@@ -736,10 +745,40 @@ You can integrate Godri with Claude Code to enable AI assistant access to your G
    uv run src/godri/main.py auth
    ```
 
-3. **Use with Claude Code:**
-   - Open the repository in Claude Code
-   - Claude can now read your code and help with development
+3. **Configure Claude Code for development mode:**
+   Add to your Claude Code configuration (`~/.claude/mcp_servers.json`):
+   ```json
+   {
+     "godri": {
+       "command": "uv",
+       "args": ["run", "src/godri/main.py", "mcp", "stdio"],
+       "cwd": "/absolute/path/to/godri"
+     }
+   }
+   ```
+
+4. **Use with Claude Code:**
+   - Open the repository in Claude Code for development
+   - Claude can read your code and help with development
    - Use Claude to run commands like: `uv run src/godri/main.py drive search --name "document"`
+
+#### Setup Verification
+
+To verify your installation works correctly:
+
+1. **Test CLI access:**
+   ```bash
+   godri --help
+   godri drive search --name "test" --limit 5
+   ```
+
+2. **Test MCP server:**
+   ```bash
+   godri mcp stdio
+   # Should start the MCP server and wait for input
+   ```
+
+3. **Restart Claude Code** after adding the MCP configuration to load the new tools.
 
 ### Gemini CLI Integration
 
