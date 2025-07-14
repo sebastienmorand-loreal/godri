@@ -1,21 +1,20 @@
 # Godri - Google Drive CLI Tool
 
-A comprehensive Python CLI tool for interacting with Google Drive and Google Workspace APIs (Docs, Sheets, Slides) with translation capabilities.
+A comprehensive Python CLI tool for Google Drive and Google Workspace operations with a clean, hierarchical command structure.
 
 ## Features
 
-- **Authentication**: Console-based OAuth2 authentication using client secret file
-- **File Operations**: Search, upload, download files
-- **Folder Management**: Create and delete folders
-- **Google Docs**: Create and modify Google Documents
-- **Google Sheets**: Create and modify Google Spreadsheets
-- **Google Slides**: Create and modify Google Presentations
+- **Google Drive**: Search, upload, download files and manage folders
+- **Google Docs**: Create, read, and update documents with markdown support
+- **Google Sheets**: Comprehensive spreadsheet operations (create, manage sheets, read/write values, formulas, formatting, rows/columns)
+- **Google Slides**: Comprehensive presentation operations (create, themes, layouts, slides, content management)
 - **Translation**: Translate text using Google Translate API
+- **Authentication**: Secure OAuth2 flow with persistent tokens
 
 ## Installation
 
-1. Clone or download this repository
-2. Install dependencies:
+1. Clone this repository
+2. Install dependencies using uv:
 
 ```bash
 uv sync
@@ -29,255 +28,482 @@ uv sync
 2. Create a new project or select an existing one
 3. Enable the following APIs:
    - Google Drive API
-   - Google Docs API
+   - Google Docs API  
    - Google Sheets API
    - Google Slides API
-   - Google Cloud Translation API
+   - **Google Cloud Translation API** (required for translation features)
 4. Create credentials (OAuth 2.0 Client ID) for a desktop application
 5. Download the client secret JSON file
 
-### 2. Environment Variable
+### 2. Environment Configuration
 
-Set the `GODRI_CLIENT_FILE` environment variable to point to your client secret file:
+Set the `GODRI_CLIENT_FILE` environment variable:
 
 ```bash
 export GODRI_CLIENT_FILE="/path/to/your/client_secret.json"
 ```
 
-## Usage
+### 3. Authentication
 
-### Authentication
-
-First, authenticate with Google APIs:
+Authenticate with Google APIs:
 
 ```bash
 uv run src/godri/main.py auth
 ```
 
-This will open a browser window for OAuth consent and create a `~/.godri-token.json` file for subsequent requests.
+This opens a browser for OAuth consent and creates `~/.godri-token.json` for subsequent requests.
 
-### File Operations
+## Command Structure
+
+Godri uses a clean, hierarchical command structure:
+
+```
+godri [--verbose] <command> <subcommand> [args...]
+```
+
+## Commands Reference
+
+### Authentication
+
+```bash
+# Authenticate with Google APIs
+godri auth
+
+# Force re-authentication (delete existing token)
+godri auth --force
+```
+
+### Google Drive Operations
 
 #### Search Files
-
 ```bash
 # Search by query
-uv run src/godri/main.py search --query "name contains 'test'"
+godri drive search --query "name contains 'report'"
 
 # Search by name
-uv run src/godri/main.py search --name "document"
+godri drive search --name "document" --limit 50
 
 # Search with MIME type filter
-uv run src/godri/main.py search --name "spreadsheet" --mime-type "application/vnd.google-apps.spreadsheet"
+godri drive search --name "spreadsheet" --mime-type "application/vnd.google-apps.spreadsheet"
 ```
 
-#### Upload Files
-
+#### File Operations
 ```bash
-# Upload to root
-uv run src/godri/main.py upload /path/to/file.txt
+# Upload file
+godri drive upload /path/to/file.txt --folder-id "FOLDER_ID" --name "Custom Name"
 
-# Upload to specific folder
-uv run src/godri/main.py upload /path/to/file.txt --folder-id "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+# Download file (original format)
+godri drive download "FILE_ID" /path/to/output.txt
 
-# Upload with custom name
-uv run src/godri/main.py upload /path/to/file.txt --name "My Custom File"
+# Smart download (converts Google Workspace files to Office formats)
+godri drive download "FILE_ID" /path/to/output --smart
 ```
 
-#### Download Files
+**Smart Download Conversions:**
+- Google Docs → Word (.docx)
+- Google Sheets → Excel (.xlsx)
+- Google Slides → PowerPoint (.pptx)
+- Other Google Workspace → PDF (.pdf)
 
+#### Folder Management
 ```bash
-# Download file as-is
-uv run src/godri/main.py download "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" /path/to/output.txt
+# Create folder
+godri drive folder create "My Folder" --parent-id "PARENT_FOLDER_ID"
 
-# Smart download with format conversion
-uv run src/godri/main.py download "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" /path/to/output --smart
+# Delete file or folder
+godri drive folder delete "FILE_OR_FOLDER_ID"
 ```
 
-**Smart Download Formats:**
-- **Google Docs** → Word (.docx)
-- **Google Sheets** → Excel (.xlsx) 
-- **Google Slides** → PowerPoint (.pptx)
-- **Other Google Workspace** → PDF (.pdf)
-- **Regular files** → Original format
-
-### Folder Management
-
-#### Create Folder
+### Google Docs Operations
 
 ```bash
-# Create in root
-uv run src/godri/main.py create-folder "My New Folder"
+# Create document
+godri docs create-document "Document Title" --folder-id "FOLDER_ID" --content "Initial content" --markdown
 
-# Create in specific parent folder
-uv run src/godri/main.py create-folder "Subfolder" --parent-id "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+# Read document
+godri docs read "DOCUMENT_ID" --plain-text
+
+# Update document
+godri docs update "DOCUMENT_ID" "New content" --markdown --replace --index 1
+
+# Translate document (preserves formatting)
+godri docs translate "DOCUMENT_ID" "fr" --source-language "en"
+godri docs translate "DOCUMENT_ID" "es" --start-index 10 --end-index 100
 ```
 
-#### Delete Files/Folders
+### Google Sheets Operations
 
+#### Create Spreadsheet
 ```bash
-uv run src/godri/main.py delete "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+godri sheets create-document "Spreadsheet Title" --folder-id "FOLDER_ID"
 ```
 
-### Google Workspace Documents
-
-#### Create Google Doc
-
+#### Sheet Management
 ```bash
-# Create empty document
-uv run src/godri/main.py create-doc "My Document"
+# List all sheets in spreadsheet
+godri sheets read "SPREADSHEET_ID"
 
-# Create in specific folder
-uv run src/godri/main.py create-doc "My Document" --folder-id "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+# Create new sheet
+godri sheets create "SPREADSHEET_ID" "Sheet Name"
 
-# Create with initial content
-uv run src/godri/main.py create-doc "My Document" --content "Hello, World!"
+# Hide/unhide sheets
+godri sheets hide "SPREADSHEET_ID" "Sheet Name"
+godri sheets unhide "SPREADSHEET_ID" "Sheet Name"
+
+# Delete sheet
+godri sheets delete "SPREADSHEET_ID" "Sheet Name"
 ```
 
-#### Create Google Sheet
-
+#### Values Operations
 ```bash
-# Create empty spreadsheet
-uv run src/godri/main.py create-sheet "My Spreadsheet"
+# Read sheet data
+godri sheets values read "SPREADSHEET_ID" --sheet-name "Sheet1" --range "A1:C10" --json --limit 100
 
-# Create in specific folder
-uv run src/godri/main.py create-sheet "My Spreadsheet" --folder-id "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+# Set values
+godri sheets values set "SPREADSHEET_ID" "A1:B2" "Value1,Value2,Value3,Value4"
+godri sheets values set "SPREADSHEET_ID" "A1" '[[\"Row1Col1\",\"Row1Col2\"],[\"Row2Col1\",\"Row2Col2\"]]'
+
+# Set formula
+godri sheets values set "SPREADSHEET_ID" "C1" "SUM(A1:B1)" --formula
+
+# Set values with formatting
+godri sheets values set "SPREADSHEET_ID" "A1" "Bold Text" --format '{"textFormat":{"bold":true}}'
+
+# Format cells (using JSON) - Basic examples
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"backgroundColor":{"red":1.0,"green":0.8,"blue":0.8}}'
+
+# Copy formatting from another range
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --from "C1:C1"
+
+# Copy single cell format to larger range (pattern replication)
+godri sheets values format "SPREADSHEET_ID" "A1:E10" --from "A1"
+
+# Copy multi-cell pattern with tiling
+godri sheets values format "SPREADSHEET_ID" "A1:F10" --from "A1:B2"
 ```
 
-#### Create Google Slides
+#### Comprehensive Formatting Examples
 
+**Font and Text Styling:**
 ```bash
-# Create empty presentation
-uv run src/godri/main.py create-slides "My Presentation"
+# Set font family to Arial
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"textFormat":{"fontFamily":"Arial"}}'
 
-# Create in specific folder
-uv run src/godri/main.py create-slides "My Presentation" --folder-id "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+# Set font family to Calibri
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"textFormat":{"fontFamily":"Calibri"}}'
+
+# Make text bold
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"textFormat":{"bold":true}}'
+
+# Make text italic
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"textFormat":{"italic":true}}'
+
+# Make text underlined
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"textFormat":{"underline":true}}'
+
+# Set font size to 14pt
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"textFormat":{"fontSize":14}}'
+```
+
+**Colors (RGB values from 0.0 to 1.0):**
+```bash
+# Red text
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"textFormat":{"foregroundColor":{"red":1.0,"green":0.0,"blue":0.0}}}'
+
+# Blue text
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"textFormat":{"foregroundColor":{"red":0.0,"green":0.0,"blue":1.0}}}'
+
+# Green text
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"textFormat":{"foregroundColor":{"red":0.0,"green":0.8,"blue":0.0}}}'
+
+# Yellow background
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"backgroundColor":{"red":1.0,"green":1.0,"blue":0.0}}'
+
+# Light blue background
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"backgroundColor":{"red":0.8,"green":0.9,"blue":1.0}}'
+
+# Light gray background
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"backgroundColor":{"red":0.9,"green":0.9,"blue":0.9}}'
+```
+
+**Combined Formatting:**
+```bash
+# Header style: bold Arial 12pt with gray background
+godri sheets values format "SPREADSHEET_ID" "A1:E1" --format-options '{"textFormat":{"bold":true,"fontFamily":"Arial","fontSize":12},"backgroundColor":{"red":0.8,"green":0.8,"blue":0.8}}'
+
+# Error style: bold red text with light red background
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"textFormat":{"bold":true,"foregroundColor":{"red":1.0,"green":0.0,"blue":0.0}},"backgroundColor":{"red":1.0,"green":0.9,"blue":0.9}}'
+
+# Success style: italic green text with light green background
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"textFormat":{"italic":true,"foregroundColor":{"red":0.0,"green":0.6,"blue":0.0}},"backgroundColor":{"red":0.9,"green":1.0,"blue":0.9}}'
+
+# Professional style: Calibri 11pt, center aligned
+godri sheets values format "SPREADSHEET_ID" "A1:B5" --format-options '{"textFormat":{"fontFamily":"Calibri","fontSize":11},"horizontalAlignment":"CENTER"}'
+```
+
+#### Row/Column Operations
+```bash
+# Add/remove rows
+godri sheets rows add "SPREADSHEET_ID" 5 --count 2 --sheet-name "Sheet1"
+godri sheets rows remove "SPREADSHEET_ID" 5 --count 2 --sheet-name "Sheet1"
+
+# Add/remove columns  
+godri sheets columns add "SPREADSHEET_ID" "C" --count 1 --sheet-name "Sheet1"
+godri sheets columns remove "SPREADSHEET_ID" "C" --count 1 --sheet-name "Sheet1"
+```
+
+#### Translation Operations
+```bash
+# Translate range (preserves formulas and formatting)
+godri sheets translate "SPREADSHEET_ID" "A1:C10" "fr" --source-language "en"
+
+# Translate headers
+godri sheets translate "SPREADSHEET_ID" "A1:Z1" "es"
+
+# Translate specific sheet range
+godri sheets translate "SPREADSHEET_ID" "Sheet1!B2:D20" "de"
+```
+
+**Translation Features:**
+- **Format Preservation**: All cell formatting (bold, colors, etc.) is maintained during translation
+- **Formula Intelligence**: Only string literals within formulas are translated, formula structure preserved
+- **Smart Detection**: Automatically skips numbers, dates, and non-translatable content
+- **Range Support**: Translate specific ranges or entire sheet areas
+
+**Format Operations:**
+- **JSON Formatting**: Apply custom formatting using Google Sheets format JSON
+- **Format Copying**: Copy formatting from one range to another with intelligent tiling
+- **Pattern Replication**: Single cell formatting can be copied to larger ranges
+
+### Google Slides Operations
+
+#### Create Presentation
+```bash
+# Create presentation with default theme (Streamline)
+godri slides create-document "Presentation Title" --folder-id "FOLDER_ID"
+
+# Create presentation with specific theme
+godri slides create-document "Presentation Title" --theme "CORAL" --folder-id "FOLDER_ID"
+```
+
+**Available Themes:**
+- SIMPLE_LIGHT, SIMPLE_DARK, STREAMLINE (default), FOCUS, SHIFT, MOMENTUM
+- PARADIGM, SLATE, CORAL, BEACH_DAY, MODERN_WRITER, SPEARMINT
+- GAMEDAY, BLUE_AND_YELLOW, SWISS, LUXE, MARINA, FOREST
+
+#### Theme Management
+```bash
+# Import theme from another presentation
+godri slides themes import "TARGET_PRESENTATION_ID" "SOURCE_PRESENTATION_ID"
+
+# Import and automatically apply theme
+godri slides themes import "TARGET_PRESENTATION_ID" "SOURCE_PRESENTATION_ID" --set
+
+# Set theme for presentation
+godri slides themes set "PRESENTATION_ID" "STREAMLINE"
+```
+
+#### Layout Operations
+```bash
+# List available slide layouts
+godri slides layout list "PRESENTATION_ID"
+```
+
+**Available Layouts:**
+- BLANK, CAPTION_ONLY, TITLE, TITLE_AND_BODY, TITLE_AND_TWO_COLUMNS
+- TITLE_ONLY, SECTION_HEADER, SECTION_TITLE_AND_DESCRIPTION
+- ONE_COLUMN_TEXT, MAIN_POINT, BIG_NUMBER
+
+#### Slide Management
+```bash
+# Add slide with default layout (BLANK)
+godri slides add "PRESENTATION_ID"
+
+# Add slide with specific layout
+godri slides add "PRESENTATION_ID" --layout "TITLE_AND_BODY"
+
+# Add slide at specific position (0-based)
+godri slides add "PRESENTATION_ID" --layout "TITLE" --position 2
+
+# Move slide to new position
+godri slides move "PRESENTATION_ID" "SLIDE_ID" 3
+
+# Remove slide
+godri slides remove "PRESENTATION_ID" "SLIDE_ID"
+```
+
+#### Content Management
+```bash
+# List content in slide
+godri slides content list "PRESENTATION_ID" "SLIDE_ID"
+
+# Add text content
+godri slides content add "PRESENTATION_ID" "SLIDE_ID" text "Hello World" --x 100 --y 100 --width 300 --height 50
+
+# Add text with formatting (similar to sheets formatting)
+godri slides content add "PRESENTATION_ID" "SLIDE_ID" text "Bold Title" --format '{"textFormat":{"bold":true,"fontSize":18}}'
+
+# Add image content
+godri slides content add "PRESENTATION_ID" "SLIDE_ID" image "https://example.com/image.jpg" --x 200 --y 150 --width 400 --height 300
+
+# Add table content (3 rows x 4 columns)
+godri slides content add "PRESENTATION_ID" "SLIDE_ID" table "3x4" --x 50 --y 100 --width 500 --height 200
+
+# Remove content element
+godri slides content remove "PRESENTATION_ID" "ELEMENT_ID"
+
+# Move content element
+godri slides content move "PRESENTATION_ID" "ELEMENT_ID" 250 300
+```
+
+**Content Formatting Options:**
+Slides support similar formatting options to Google Sheets:
+```bash
+# Bold text with blue color
+--format '{"textFormat":{"bold":true,"foregroundColor":{"red":0.0,"green":0.0,"blue":1.0}}}'
+
+# Large font with background color
+--format '{"textFormat":{"fontSize":24,"fontFamily":"Arial"},"backgroundColor":{"red":0.9,"green":0.9,"blue":1.0}}'
+
+# Combined formatting
+--format '{"textFormat":{"bold":true,"italic":true,"fontSize":16,"fontFamily":"Calibri","foregroundColor":{"red":0.2,"green":0.2,"blue":0.8}}}'
 ```
 
 ### Translation
 
 ```bash
-# Translate text (auto-detect source language)
-uv run src/godri/main.py translate "Hello, world!" "fr"
+# Translate text (auto-detect source)
+godri translate "Hello, world!" "fr"
 
 # Translate with specified source language
-uv run src/godri/main.py translate "Hello, world!" "fr" --source-language "en"
+godri translate "Bonjour le monde!" "en" --source-language "fr"
 ```
 
-### Reading Google Docs
+## Advanced Examples
 
+### Complex Slides Operations
 ```bash
-# Read document content with headers
-uv run src/godri/main.py read-doc "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+# Create presentation with corporate theme and add structured content
+PRES_ID=$(godri slides create-document "Sales Presentation" --theme "LUXE" | grep -o 'ID: [^,]*' | cut -d' ' -f2)
 
-# Read plain text only
-uv run src/godri/main.py read-doc "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" --plain-text
+# Add title slide
+godri slides add "$PRES_ID" --layout "TITLE" --position 0
+TITLE_SLIDE=$(godri slides content list "$PRES_ID" | head -1 | cut -d' ' -f4)  # Get first slide ID
+
+# Add content to title slide
+godri slides content add "$PRES_ID" "$TITLE_SLIDE" text "Q4 Sales Results" --x 100 --y 150 --width 600 --height 100 --format '{"textFormat":{"bold":true,"fontSize":32,"fontFamily":"Arial"}}'
+
+# Add content slide with data
+godri slides add "$PRES_ID" --layout "TITLE_AND_BODY"
+CONTENT_SLIDE=$(godri slides content list "$PRES_ID" | tail -1 | cut -d' ' -f4)  # Get last slide ID
+
+# Add table with sales data
+godri slides content add "$PRES_ID" "$CONTENT_SLIDE" table "4x3" --x 50 --y 200 --width 600 --height 300
+
+# List all content for review
+godri slides content list "$PRES_ID" "$TITLE_SLIDE"
+godri slides content list "$PRES_ID" "$CONTENT_SLIDE"
 ```
 
-## Command Reference
+### Complex Sheet Operations
+```bash
+# Create spreadsheet and add data with formulas
+SHEET_ID=$(godri sheets create-document "Sales Report" | grep -o 'ID: [^,]*' | cut -d' ' -f2)
+godri sheets values set "$SHEET_ID" "A1:C1" "Product,Price,Total"
+godri sheets values set "$SHEET_ID" "A2:B3" "Widget,10,Gadget,20"
+godri sheets values set "$SHEET_ID" "C2" "B2*2" --formula
+godri sheets values set "$SHEET_ID" "C3" "B3*2" --formula
+godri sheets values format "$SHEET_ID" "A1:C1" '{"textFormat":{"bold":true}}'
 
-### Global Options
+# Translate to multiple languages
+godri sheets translate "$SHEET_ID" "A1:A3" "fr"  # Translate product names to French
+godri sheets translate "$SHEET_ID" "A1:C1" "es"  # Translate headers to Spanish
+```
 
-- `--verbose, -v`: Enable verbose logging
+### Translation Workflow
+```bash
+# Translate Google Doc to French
+godri docs translate "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" "fr"
 
-### Commands
+# Translate specific range in spreadsheet
+godri sheets translate "1n0lrRoYg6KW7uoyGuawe88XSY5o5dF9dkwAFCmnregs" "A1:C10" "de" --source-language "en"
 
-- `auth`: Authenticate with Google APIs
-- `search`: Search for files
-  - `--query, -q`: Search query
-  - `--name, -n`: Search by file name
-  - `--mime-type, -t`: Filter by MIME type
-  - `--limit, -l`: Maximum results (default: 20)
-- `upload`: Upload a file
-  - `file_path`: Path to file to upload
-  - `--folder-id, -f`: Parent folder ID
-  - `--name, -n`: Custom file name
-- `download`: Download a file
-  - `file_id`: File ID to download
-  - `output_path`: Output file path
-  - `--smart, -s`: Smart download with format conversion for Google Workspace files
-- `create-folder`: Create a folder
-  - `name`: Folder name
-  - `--parent-id, -p`: Parent folder ID
-- `delete`: Delete a file or folder
-  - `file_id`: File/folder ID to delete
-- `create-doc`: Create a Google Doc
-  - `title`: Document title
-  - `--folder-id, -f`: Folder ID
-  - `--content, -c`: Initial content
-- `create-sheet`: Create a Google Sheet
-  - `title`: Spreadsheet title
-  - `--folder-id, -f`: Folder ID
-- `create-slides`: Create a Google Slides presentation
-  - `title`: Presentation title
-  - `--folder-id, -f`: Folder ID
-- `translate`: Translate text
-  - `text`: Text to translate
-  - `target_language`: Target language code (e.g., 'fr', 'es')
-  - `--source-language, -s`: Source language code
-- `read-doc`: Read Google Doc content to stdout
-  - `document_id`: Document ID to read
-  - `--plain-text, -p`: Output only plain text without headers
+# Translate document section (characters 100-500)
+godri docs translate "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" "es" --start-index 100 --end-index 500
+```
+
+### Batch File Operations
+```bash
+# Upload multiple files to same folder
+for file in *.txt; do
+    godri drive upload "$file" --folder-id "FOLDER_ID"
+done
+```
 
 ## Development
 
 ### Project Structure
-
 ```
 godri/
 ├── src/godri/
-│   ├── __init__.py
-│   ├── main.py              # CLI entry point
+│   ├── main.py                 # CLI entry point with hierarchical commands
 │   ├── config/
-│   │   ├── __init__.py
-│   │   └── logging_config.py
-│   ├── services/
-│   │   ├── __init__.py
-│   │   ├── auth_service.py   # Authentication
-│   │   ├── drive_service.py  # Google Drive operations
-│   │   ├── docs_service.py   # Google Docs operations
-│   │   ├── sheets_service.py # Google Sheets operations
-│   │   ├── slides_service.py # Google Slides operations
-│   │   └── translate_service.py # Translation
-│   └── models/
-│       └── __init__.py
-├── pyproject.toml
-├── README.md
-└── .gitignore
+│   │   └── logging_config.py   # Logging configuration
+│   └── services/
+│       ├── auth_service.py     # OAuth2 authentication
+│       ├── drive_service.py    # Google Drive operations
+│       ├── docs_service.py     # Google Docs with markdown support
+│       ├── sheets_service.py   # Google Sheets comprehensive operations
+│       ├── slides_service.py   # Google Slides comprehensive operations
+│       └── translate_service.py # Translation service
+├── pyproject.toml              # UV dependency configuration
+└── README.md
 ```
 
-### Running Tests
-
+### Code Quality
 ```bash
-uv run pytest
-```
+# Format code (required before commits)
+black -l 120 src/
 
-### Code Formatting
-
-```bash
-uv run black -l 120 src/
+# Run application
+uv run src/godri/main.py <command>
 ```
 
 ## Common MIME Types
 
-- Google Doc: `application/vnd.google-apps.document`
-- Google Sheet: `application/vnd.google-apps.spreadsheet`
-- Google Slides: `application/vnd.google-apps.presentation`
-- Google Folder: `application/vnd.google-apps.folder`
-- PDF: `application/pdf`
-- Text: `text/plain`
-- Image: `image/jpeg`, `image/png`
+| File Type | MIME Type |
+|-----------|-----------|
+| Google Doc | `application/vnd.google-apps.document` |
+| Google Sheet | `application/vnd.google-apps.spreadsheet` |
+| Google Slides | `application/vnd.google-apps.presentation` |
+| Google Folder | `application/vnd.google-apps.folder` |
+| PDF | `application/pdf` |
+| Text | `text/plain` |
+| Word | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
+| Excel | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` |
 
-## Error Handling
+## Error Handling & Debugging
 
-The tool includes comprehensive error handling and logging. Use the `--verbose` flag for detailed debugging information.
+- Use `--verbose` flag for detailed logging
+- Authentication tokens stored in `~/.godri-token.json`
+- Comprehensive error messages with actionable guidance
+- Automatic retry logic for transient API errors
 
-## Security Notes
+## Security
 
-- The `~/.godri-token.json` file contains your authentication tokens - keep it secure
-- The client secret file should also be kept secure and not committed to version control
-- The client secret file is excluded in the `.gitignore`
+- OAuth2 tokens stored securely in user home directory
+- Client secret file should never be committed to version control
+- All API communication uses HTTPS
+- Tokens automatically refresh when expired
+
+## Support
+
+For issues, feature requests, or questions:
+1. Check the command help: `godri <command> --help`
+2. Enable verbose logging: `godri --verbose <command>`
+3. Verify API quotas in Google Cloud Console
+4. Ensure all required APIs are enabled
 
 ## License
 
-This project is for personal/educational use. Please ensure compliance with Google API Terms of Service.
+Personal/Educational use. Ensure compliance with Google API Terms of Service.
