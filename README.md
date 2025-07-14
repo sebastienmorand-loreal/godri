@@ -153,6 +153,16 @@ uv run src/godri/main.py translate "Hello, world!" "fr"
 uv run src/godri/main.py translate "Hello, world!" "fr" --source-language "en"
 ```
 
+### Reading Google Docs
+
+```bash
+# Read document content with headers
+uv run src/godri/main.py read-doc "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+
+# Read plain text only
+uv run src/godri/main.py read-doc "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" --plain-text
+```
+
 ## Command Reference
 
 ### Global Options
@@ -193,6 +203,9 @@ uv run src/godri/main.py translate "Hello, world!" "fr" --source-language "en"
   - `text`: Text to translate
   - `target_language`: Target language code (e.g., 'fr', 'es')
   - `--source-language, -s`: Source language code
+- `read-doc`: Read Google Doc content to stdout
+  - `document_id`: Document ID to read
+  - `--plain-text, -p`: Output only plain text without headers
 
 ## Development
 

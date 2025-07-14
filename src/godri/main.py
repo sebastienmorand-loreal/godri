@@ -169,6 +169,23 @@ class GodriCLI:
             self.logger.error("Translation failed: %s", str(e))
             sys.exit(1)
 
+    async def handle_read_doc(self, args):
+        """Handle reading Google Doc content."""
+        try:
+            if args.plain_text:
+                content = self.docs_service.get_document_text(args.document_id)
+                print(content)
+            else:
+                document = self.docs_service.get_document(args.document_id)
+                print(f"Document: {document.get('title', 'Untitled')}")
+                print(f"ID: {args.document_id}")
+                print("=" * 50)
+                content = self.docs_service.get_document_text(args.document_id)
+                print(content)
+        except Exception as e:
+            self.logger.error("Failed to read document: %s", str(e))
+            sys.exit(1)
+
     def create_parser(self):
         """Create argument parser."""
         parser = argparse.ArgumentParser(description="Google Drive CLI tool", prog="godri")
@@ -220,6 +237,12 @@ class GodriCLI:
         translate_parser.add_argument("target_language", help="Target language code (e.g., 'fr', 'es')")
         translate_parser.add_argument("--source-language", "-s", help="Source language code")
 
+        read_doc_parser = subparsers.add_parser("read-doc", help="Read Google Doc content to stdout")
+        read_doc_parser.add_argument("document_id", help="Document ID to read")
+        read_doc_parser.add_argument(
+            "--plain-text", "-p", action="store_true", help="Output only plain text without headers"
+        )
+
         return parser
 
     async def run(self, args=None):
@@ -251,6 +274,7 @@ class GodriCLI:
             "create-sheet": self.handle_create_sheet,
             "create-slides": self.handle_create_slides,
             "translate": self.handle_translate,
+            "read-doc": self.handle_read_doc,
         }
 
         handler = command_handlers.get(parsed_args.command)
