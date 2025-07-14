@@ -4,15 +4,22 @@ import asyncio
 import argparse
 import sys
 import logging
+import os
+from pathlib import Path
 from typing import Optional
 
-from .config.logging_config import setup_logging
-from .services.auth_service import AuthService
-from .services.drive_service import DriveService
-from .services.docs_service import DocsService
-from .services.sheets_service import SheetsService
-from .services.slides_service import SlidesService
-from .services.translate_service import TranslateService
+# Add the src directory to the path
+current_dir = Path(__file__).parent
+src_dir = current_dir.parent
+sys.path.insert(0, str(src_dir))
+
+from godri.config.logging_config import setup_logging
+from godri.services.auth_service import AuthService
+from godri.services.drive_service import DriveService
+from godri.services.docs_service import DocsService
+from godri.services.sheets_service import SheetsService
+from godri.services.slides_service import SlidesService
+from godri.services.translate_service import TranslateService
 
 
 class GodriCLI:
