@@ -766,24 +766,13 @@ class GodriCLI:
 
                 self._display_multiple_slides_content(results, args.detailed)
             else:
-                # List content for specific slides
-                if len(args.slides) == 1:
-                    # Single slide
-                    content_elements = self.slides_service.list_slide_content(args.presentation_id, args.slides[0])
-                    if not content_elements:
-                        print(f"No content found in slide {args.slides[0]}")
-                        return
+                # List content for specific slides (always use multiple handler to support ranges)
+                results = self.slides_service.list_multiple_slides_content(args.presentation_id, args.slides)
+                if not results:
+                    print("No content found for specified slides")
+                    return
 
-                    print(f"Content in slide {args.slides[0]}:")
-                    self._display_slide_content(content_elements, args.detailed)
-                else:
-                    # Multiple specific slides
-                    results = self.slides_service.list_multiple_slides_content(args.presentation_id, args.slides)
-                    if not results:
-                        print("No content found for specified slides")
-                        return
-
-                    self._display_multiple_slides_content(results, args.detailed)
+                self._display_multiple_slides_content(results, args.detailed)
 
         except ValueError as e:
             print(f"Error: {e}")

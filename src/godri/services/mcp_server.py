@@ -378,13 +378,13 @@ async def slides_content_add(
 
 
 @mcp.tool(name="slides_content_list")
-async def slides_content_list(presentation_id: str, slide_identifier: str = "", all_slides: bool = False) -> str:
-    """List content elements in slide(s). Use slide_identifier for specific slide (number like '2' or API ID), or all_slides=True for all slides.
+async def slides_content_list(presentation_id: str, slide_identifiers: str = "", all_slides: bool = False) -> str:
+    """List content elements in slide(s). Use slide_identifiers for specific slides (numbers, IDs, or ranges like '1-3,5' or '2' or '1,3,5'), or all_slides=True for all slides.
     Returns detailed content including text, images, tables with formatting, size, and position information."""
     await initialize_services()
 
     try:
-        if all_slides or not slide_identifier:
+        if all_slides or not slide_identifiers:
             # List content for all slides
             results = slides_service.list_multiple_slides_content(presentation_id)
             if not results:
@@ -432,72 +432,81 @@ async def slides_content_list(presentation_id: str, slide_identifier: str = "", 
 
             return "\n".join(output)
         else:
-            # List content for specific slide
-            content_elements = slides_service.list_slide_content(presentation_id, slide_identifier)
-            if not content_elements:
-                return f"No content found in slide {slide_identifier}"
+            # Parse slide identifiers to support ranges and multiple slides
+            identifiers = [id.strip() for id in slide_identifiers.split(",")]
 
-            output = [f"Content in slide {slide_identifier}:"]
-            for i, element in enumerate(content_elements):
-                output.append(f"  Element {i+1}:")
-                output.append(f"    ID: {element['id']}")
-                output.append(f"    Type: {element['type']}")
+            # Use multiple slides handler to support ranges
+            results = slides_service.list_multiple_slides_content(presentation_id, identifiers)
+            if not results:
+                return "No content found for specified slides"
 
-                if "size" in element:
-                    size = element["size"]
-                    output.append(f"    Size: {size['width']} x {size['height']}")
+            output = []
+            for slide_key, content_elements in results.items():
+                output.append(f"=== {slide_key} ===")
+                if not content_elements:
+                    output.append("  No content elements found")
+                else:
+                    for i, element in enumerate(content_elements):
+                        output.append(f"  Element {i+1}:")
+                        output.append(f"    ID: {element['id']}")
+                        output.append(f"    Type: {element['type']}")
 
-                if "position" in element:
-                    pos = element["position"]
-                    output.append(f"    Position: ({pos['x']}, {pos['y']})")
+                        if "size" in element:
+                            size = element["size"]
+                            output.append(f"    Size: {size['width']} x {size['height']}")
 
-                if "text_content" in element and element["text_content"]:
-                    output.append(f"    Text: \"{element['text_content']}\"")
+                        if "position" in element:
+                            pos = element["position"]
+                            output.append(f"    Position: ({pos['x']}, {pos['y']})")
 
-                    if "text_details" in element:
-                        for j, detail in enumerate(element["text_details"]):
-                            if detail["content"].strip():
-                                style_info = ""
-                                if "style" in detail:
-                                    style = detail["style"]
-                                    style_parts = []
-                                    if style.get("bold"):
-                                        style_parts.append("bold")
-                                    if style.get("italic"):
-                                        style_parts.append("italic")
-                                    if style.get("font_family"):
-                                        style_parts.append(f"font:{style['font_family']}")
-                                    if style.get("font_size"):
-                                        style_parts.append(f"size:{style['font_size']}")
-                                    if style_parts:
-                                        style_info = f" ({', '.join(style_parts)})"
-                                output.append(f"      Text {j+1}: \"{detail['content'].strip()}\"{style_info}")
+                        if "text_content" in element and element["text_content"]:
+                            output.append(f"    Text: \"{element['text_content']}\"")
 
-                if "shape_type" in element:
-                    output.append(f"    Shape: {element['shape_type']}")
-                    if "shape_properties" in element and element["shape_properties"]:
-                        props = element["shape_properties"]
-                        if "background_color" in props:
-                            output.append(f"    Background: {props['background_color']}")
+                            if "text_details" in element:
+                                for j, detail in enumerate(element["text_details"]):
+                                    if detail["content"].strip():
+                                        style_info = ""
+                                        if "style" in detail:
+                                            style = detail["style"]
+                                            style_parts = []
+                                            if style.get("bold"):
+                                                style_parts.append("bold")
+                                            if style.get("italic"):
+                                                style_parts.append("italic")
+                                            if style.get("font_family"):
+                                                style_parts.append(f"font:{style['font_family']}")
+                                            if style.get("font_size"):
+                                                style_parts.append(f"size:{style['font_size']}")
+                                            if style_parts:
+                                                style_info = f" ({', '.join(style_parts)})"
+                                        output.append(f"      Text {j+1}: \"{detail['content'].strip()}\"{style_info}")
 
-                if "table_info" in element:
-                    table_info = element["table_info"]
-                    output.append(f"    Table: {table_info['rows']} rows x {table_info['columns']} columns")
-                    if "table_contents" in element:
-                        output.append(f"    Contents:")
-                        for row_idx, row in enumerate(element["table_contents"]):
-                            row_text = " | ".join(cell.strip() if cell.strip() else "(empty)" for cell in row)
-                            output.append(f"      Row {row_idx+1}: {row_text}")
+                        if "shape_type" in element:
+                            output.append(f"    Shape: {element['shape_type']}")
+                            if "shape_properties" in element and element["shape_properties"]:
+                                props = element["shape_properties"]
+                                if "background_color" in props:
+                                    output.append(f"    Background: {props['background_color']}")
 
-                if "image_properties" in element:
-                    img_props = element["image_properties"]
-                    output.append(f"    Image:")
-                    if img_props.get("content_url"):
-                        output.append(f"      Content URL: {img_props['content_url']}")
-                    if img_props.get("source_url"):
-                        output.append(f"      Source URL: {img_props['source_url']}")
+                        if "table_info" in element:
+                            table_info = element["table_info"]
+                            output.append(f"    Table: {table_info['rows']} rows x {table_info['columns']} columns")
+                            if "table_contents" in element:
+                                output.append(f"    Contents:")
+                                for row_idx, row in enumerate(element["table_contents"]):
+                                    row_text = " | ".join(cell.strip() if cell.strip() else "(empty)" for cell in row)
+                                    output.append(f"      Row {row_idx+1}: {row_text}")
 
-                output.append("")  # Empty line between elements
+                        if "image_properties" in element:
+                            img_props = element["image_properties"]
+                            output.append(f"    Image:")
+                            if img_props.get("content_url"):
+                                output.append(f"      Content URL: {img_props['content_url']}")
+                            if img_props.get("source_url"):
+                                output.append(f"      Source URL: {img_props['source_url']}")
+
+                        output.append("")  # Empty line between elements
+                output.append("")  # Empty line between slides
 
             return "\n".join(output)
 
@@ -505,6 +514,81 @@ async def slides_content_list(presentation_id: str, slide_identifier: str = "", 
         return f"Error: {e}"
     except Exception as e:
         return f"Failed to list slide content: {e}"
+
+
+# Copy tools
+@mcp.tool(name="slides_copy")
+async def slides_copy(
+    source_presentation_id: str,
+    target_presentation_id: str,
+    slide_identifiers: str,
+    preserve_theme: bool = True,
+    link_to_source: bool = False,
+    target_position: int = -1,
+) -> str:
+    """Copy slides from one presentation to another. slide_identifiers can be numbers, IDs, or ranges (e.g., '1-3,5', '2', '1,3,5').
+    Set preserve_theme=False to use target presentation theme. Set link_to_source=True to link slides to source. Position -1 adds at end.
+    """
+    await initialize_services()
+
+    # Parse slide identifiers into list
+    identifiers = [id.strip() for id in slide_identifiers.split(",")]
+
+    result = slides_service.copy_slides(
+        source_presentation_id,
+        target_presentation_id,
+        identifiers,
+        preserve_theme=preserve_theme,
+        link_to_source=link_to_source,
+        target_position=None if target_position == -1 else target_position,
+    )
+
+    return f"Successfully copied {result['copied_slides']} slides. New slide IDs: {', '.join(result['new_slide_ids'])}"
+
+
+@mcp.tool(name="sheets_copy")
+async def sheets_copy(
+    source_spreadsheet_id: str,
+    target_spreadsheet_id: str,
+    sheet_names: str,
+    target_name: str = "",
+    preserve_formatting: bool = True,
+) -> str:
+    """Copy sheets from one spreadsheet to another. sheet_names is comma-separated list of sheet names to copy.
+    For single sheet copy, optionally specify target_name. Set preserve_formatting=False to ignore formatting."""
+    await initialize_services()
+
+    # Parse sheet names into list
+    names = [name.strip() for name in sheet_names.split(",")]
+
+    if len(names) == 1 and target_name:
+        # Single sheet copy with custom name
+        result = sheets_service.copy_sheet(
+            source_spreadsheet_id,
+            target_spreadsheet_id,
+            names[0],
+            target_sheet_name=target_name,
+            preserve_formatting=preserve_formatting,
+        )
+        return f"Successfully copied sheet '{result['source_sheet']}' to '{result['target_sheet']}' (ID: {result['new_sheet_id']})"
+    else:
+        # Multiple sheets copy
+        result = sheets_service.copy_multiple_sheets(
+            source_spreadsheet_id, target_spreadsheet_id, names, preserve_formatting=preserve_formatting
+        )
+
+        output = [f"Sheet copy operation completed:"]
+        output.append(f"Total sheets: {result['total_sheets']}")
+        output.append(f"Successful copies: {result['successful_copies']}")
+        output.append(f"Failed copies: {result['total_sheets'] - result['successful_copies']}")
+
+        for sheet_result in result["results"]:
+            if "error" in sheet_result:
+                output.append(f"  ❌ {sheet_result['source_sheet']}: {sheet_result['error']}")
+            else:
+                output.append(f"  ✅ {sheet_result['source_sheet']} → {sheet_result['target_sheet']}")
+
+        return "\n".join(output)
 
 
 # Translation tool

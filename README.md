@@ -252,6 +252,29 @@ godri sheets columns add "SPREADSHEET_ID" "C" --count 1 --sheet-name "Sheet1"
 godri sheets columns remove "SPREADSHEET_ID" "C" --count 1 --sheet-name "Sheet1"
 ```
 
+#### Copy Sheets Between Spreadsheets
+```bash
+# Copy single sheet to another spreadsheet
+godri sheets copy "SOURCE_SPREADSHEET_ID" "TARGET_SPREADSHEET_ID" "Sheet Name"
+
+# Copy single sheet with custom target name
+godri sheets copy "SOURCE_SPREADSHEET_ID" "TARGET_SPREADSHEET_ID" "Sheet1" --target-name "Copy of Sheet1"
+
+# Copy multiple sheets
+godri sheets copy "SOURCE_SPREADSHEET_ID" "TARGET_SPREADSHEET_ID" "Sheet1" "Sheet2" "Data"
+
+# Copy sheets without preserving formatting
+godri sheets copy "SOURCE_SPREADSHEET_ID" "TARGET_SPREADSHEET_ID" "Sheet1" --no-preserve-formatting
+```
+
+**Copy Features:**
+- **Single Sheet Copy:** Copy individual sheets with optional custom naming
+- **Multiple Sheet Copy:** Copy multiple sheets in one operation with batch processing
+- **Format Preservation:** Maintains all cell formatting, styles, and structure by default
+- **Name Collision Handling:** Automatically handles duplicate names with numbering (e.g., "Sheet1 (Copy)", "Sheet1 (Copy) (1)")
+- **Error Reporting:** Detailed success/failure reporting for each sheet in batch operations
+- **Google Sheets API Integration:** Uses native copyTo API for reliable sheet duplication
+
 #### Translation Operations
 ```bash
 # Translate range (preserves formulas and formatting)
@@ -428,6 +451,37 @@ godri slides download "PRESENTATION_ID" "/path/to/images/" jpeg --range "1-5"
 - **Directory Creation:** Automatic creation of output directories for images
 - **File Naming:** Images saved as `slide_001.png`, `slide_002.png`, etc.
 
+#### Copy Slides Between Presentations
+```bash
+# Copy single slide from source to target presentation
+godri slides copy "SOURCE_PRESENTATION_ID" "TARGET_PRESENTATION_ID" 2
+
+# Copy multiple specific slides
+godri slides copy "SOURCE_PRESENTATION_ID" "TARGET_PRESENTATION_ID" 1 3 5
+
+# Copy range of slides (slides 1-3)
+godri slides copy "SOURCE_PRESENTATION_ID" "TARGET_PRESENTATION_ID" "1-3"
+
+# Copy complex range (slides 1-3 and slide 5)
+godri slides copy "SOURCE_PRESENTATION_ID" "TARGET_PRESENTATION_ID" "1-3,5"
+
+# Copy slides without preserving theme (use target presentation theme)
+godri slides copy "SOURCE_PRESENTATION_ID" "TARGET_PRESENTATION_ID" "1-3" --no-preserve-theme
+
+# Copy slides with source linking (maintain connection to source)
+godri slides copy "SOURCE_PRESENTATION_ID" "TARGET_PRESENTATION_ID" "2-4" --link-to-source
+
+# Copy slides to specific position in target presentation
+godri slides copy "SOURCE_PRESENTATION_ID" "TARGET_PRESENTATION_ID" "1,2" --position 1
+```
+
+**Copy Features:**
+- **Range Support:** Copy slides using ranges (1-3), individual numbers (2), or combinations (1-3,5)
+- **Theme Preservation:** Maintains original formatting and theme by default
+- **Source Linking:** Optional linking to maintain connection with source presentation
+- **Position Control:** Insert copied slides at specific position or append to end
+- **Batch Operations:** Copy multiple slides or ranges in single operation
+
 **Range Format Examples:**
 - `"1-3"` - Slides 1 through 3
 - `"1,3,5"` - Slides 1, 3, and 5 only  
@@ -522,10 +576,20 @@ godri mcp --transport http --host localhost --port 8000
 ### Available MCP Tools
 
 **Enhanced Slides Content Tools:**
-- `slides_content_list(presentation_id, slide_identifier="", all_slides=False)` - List detailed content in slides with enhanced formatting information
-  - Supports slide numbers (1, 2, 3) or API object IDs
+- `slides_content_list(presentation_id, slide_identifiers="", all_slides=False)` - List detailed content in slides with enhanced formatting information
+  - Supports slide numbers (1, 2, 3), API object IDs, or ranges (1-3,5)
   - Set `all_slides=True` to list content for all slides
   - Returns detailed text content, formatting, size, position, and properties
+
+**Copy Tools:**
+- `slides_copy(source_presentation_id, target_presentation_id, slide_identifiers, preserve_theme=True, link_to_source=False, target_position=-1)` - Copy slides between presentations
+  - Supports ranges like "1-3,5" or individual slides "2"
+  - Optional theme preservation and source linking
+  - Position -1 adds at end, or specify target position
+- `sheets_copy(source_spreadsheet_id, target_spreadsheet_id, sheet_names, target_name="", preserve_formatting=True)` - Copy sheets between spreadsheets
+  - Comma-separated sheet names for multiple sheet copy
+  - Optional custom target name for single sheet
+  - Formatting preservation with collision handling
 
 **Drive Tools:**
 - `drive_search(query, name, mime_type, limit)` - Search files and folders
