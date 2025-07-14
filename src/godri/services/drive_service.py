@@ -99,6 +99,96 @@ class DriveService:
         self.logger.info("File downloaded successfully to: %s", output_path)
         return output_path
 
+    async def download_file_smart(self, file_id: str, output_path: str) -> str:
+        """Download a file with smart format conversion based on file type."""
+        self.logger.info("Smart downloading file: %s to %s", file_id, output_path)
+
+        # Get file information to determine MIME type
+        file_info = self.get_file_info(file_id)
+        mime_type = file_info.get("mimeType", "")
+        file_name = file_info.get("name", "unknown")
+
+        self.logger.info("File MIME type: %s", mime_type)
+
+        # Define export formats for Google Workspace files
+        export_formats = {
+            "application/vnd.google-apps.document": {
+                "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "extension": ".docx",
+                "description": "Word format",
+            },
+            "application/vnd.google-apps.spreadsheet": {
+                "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "extension": ".xlsx",
+                "description": "Excel format",
+            },
+            "application/vnd.google-apps.presentation": {
+                "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "extension": ".pptx",
+                "description": "PowerPoint format",
+            },
+            "application/vnd.google-apps.drawing": {
+                "mime_type": "application/pdf",
+                "extension": ".pdf",
+                "description": "PDF format",
+            },
+            "application/vnd.google-apps.form": {
+                "mime_type": "application/pdf",
+                "extension": ".pdf",
+                "description": "PDF format",
+            },
+            "application/vnd.google-apps.script": {
+                "mime_type": "application/vnd.google-apps.script+json",
+                "extension": ".json",
+                "description": "Apps Script JSON format",
+            },
+        }
+
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        if mime_type in export_formats:
+            # Google Workspace file - export with conversion
+            export_info = export_formats[mime_type]
+            self.logger.info("Exporting Google Workspace file as %s", export_info["description"])
+
+            # Ensure output path has correct extension
+            if not output_path.endswith(export_info["extension"]):
+                base_path = os.path.splitext(output_path)[0]
+                output_path = base_path + export_info["extension"]
+
+            request = self.service.files().export_media(fileId=file_id, mimeType=export_info["mime_type"])
+
+            with io.BytesIO() as fh:
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while done is False:
+                    status, done = downloader.next_chunk()
+                    self.logger.debug("Export progress: %d%%", int(status.progress() * 100))
+
+                async with aiofiles.open(output_path, "wb") as f:
+                    await f.write(fh.getvalue())
+
+            self.logger.info("File exported successfully to: %s (%s)", output_path, export_info["description"])
+
+        else:
+            # Regular file - download as-is
+            self.logger.info("Downloading regular file as-is")
+            request = self.service.files().get_media(fileId=file_id)
+
+            with io.BytesIO() as fh:
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while done is False:
+                    status, done = downloader.next_chunk()
+                    self.logger.debug("Download progress: %d%%", int(status.progress() * 100))
+
+                async with aiofiles.open(output_path, "wb") as f:
+                    await f.write(fh.getvalue())
+
+            self.logger.info("File downloaded successfully to: %s", output_path)
+
+        return output_path
+
     def create_folder(self, name: str, parent_folder_id: Optional[str] = None) -> Dict[str, Any]:
         """Create a new folder."""
         self.logger.info("Creating folder: %s", name)

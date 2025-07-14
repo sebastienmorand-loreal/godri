@@ -88,7 +88,10 @@ class GodriCLI:
     async def handle_download(self, args):
         """Handle file download command."""
         try:
-            result = await self.drive_service.download_file(args.file_id, args.output_path)
+            if args.smart:
+                result = await self.drive_service.download_file_smart(args.file_id, args.output_path)
+            else:
+                result = await self.drive_service.download_file(args.file_id, args.output_path)
             print(f"File downloaded successfully to: {result}")
         except Exception as e:
             self.logger.error("Download failed: %s", str(e))
@@ -211,6 +214,12 @@ class GodriCLI:
         download_parser = subparsers.add_parser("download", help="Download a file")
         download_parser.add_argument("file_id", help="File ID to download")
         download_parser.add_argument("output_path", help="Output file path")
+        download_parser.add_argument(
+            "--smart",
+            "-s",
+            action="store_true",
+            help="Smart download: convert Google Workspace files to Office formats (Docs→Word, Sheets→Excel, Slides→PowerPoint)",
+        )
 
         folder_parser = subparsers.add_parser("create-folder", help="Create a folder")
         folder_parser.add_argument("name", help="Folder name")

@@ -87,8 +87,19 @@ uv run src/godri/main.py upload /path/to/file.txt --name "My Custom File"
 #### Download Files
 
 ```bash
+# Download file as-is
 uv run src/godri/main.py download "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" /path/to/output.txt
+
+# Smart download with format conversion
+uv run src/godri/main.py download "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" /path/to/output --smart
 ```
+
+**Smart Download Formats:**
+- **Google Docs** → Word (.docx)
+- **Google Sheets** → Excel (.xlsx) 
+- **Google Slides** → PowerPoint (.pptx)
+- **Other Google Workspace** → PDF (.pdf)
+- **Regular files** → Original format
 
 ### Folder Management
 
@@ -184,6 +195,7 @@ uv run src/godri/main.py read-doc "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
 - `download`: Download a file
   - `file_id`: File ID to download
   - `output_path`: Output file path
+  - `--smart, -s`: Smart download with format conversion for Google Workspace files
 - `create-folder`: Create a folder
   - `name`: Folder name
   - `--parent-id, -p`: Parent folder ID
