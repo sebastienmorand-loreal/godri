@@ -14,10 +14,12 @@ A comprehensive Python CLI tool for Google Drive and Google Workspace operations
 ## Installation
 
 1. Clone this repository
-2. Install dependencies using uv:
+2. Install the package:
 
 ```bash
-uv sync
+git clone https://github.com/sebastienmorand-loreal/godri.git
+cd godri
+uv install .
 ```
 
 ## Setup
@@ -48,7 +50,7 @@ export GODRI_CLIENT_FILE="/path/to/your/client_secret.json"
 Authenticate with Google APIs:
 
 ```bash
-uv run src/godri/main.py auth
+godri auth
 ```
 
 This opens a browser for OAuth consent and creates `~/.godri-token.json` for subsequent requests.
@@ -650,7 +652,7 @@ godri/
 black -l 120 src/
 
 # Run application
-uv run src/godri/main.py <command>
+godri <command>
 ```
 
 ## Common MIME Types
@@ -737,22 +739,22 @@ For development or if you prefer to run from source:
    git clone https://github.com/sebastienmorand-loreal/godri.git
    cd godri
    uv sync
+   uv install -e .  # Install in editable mode
    ```
 
 2. **Set up authentication:**
    ```bash
    export GODRI_CLIENT_FILE="/path/to/your/client_secret.json"
-   uv run src/godri/main.py auth
+   godri auth
    ```
 
-3. **Configure Claude Code for development mode:**
+3. **Configure Claude Code (same as Option 1):**
    Add to your Claude Code configuration (`~/.claude/mcp_servers.json`):
    ```json
    {
      "godri": {
-       "command": "uv",
-       "args": ["run", "src/godri/main.py", "mcp", "stdio"],
-       "cwd": "/absolute/path/to/godri"
+       "command": "godri",
+       "args": ["mcp", "stdio"]
      }
    }
    ```
@@ -760,7 +762,7 @@ For development or if you prefer to run from source:
 4. **Use with Claude Code:**
    - Open the repository in Claude Code for development
    - Claude can read your code and help with development
-   - Use Claude to run commands like: `uv run src/godri/main.py drive search --name "document"`
+   - Use Claude to run commands like: `godri drive search --name "document"`
 
 #### Setup Verification
 
@@ -802,10 +804,9 @@ Godri can be integrated with Google's Gemini CLI for enhanced AI-powered documen
        """Run godri command and return results"""
        try:
            result = subprocess.run(
-               ['uv', 'run', 'src/godri/main.py'] + args,
+               ['godri'] + args,
                capture_output=True,
-               text=True,
-               cwd='/path/to/godri'
+               text=True
            )
            return result.stdout
        except Exception as e:
