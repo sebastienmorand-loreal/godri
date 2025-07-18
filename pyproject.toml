@@ -1,6 +1,6 @@
 [project]
 name = "godri"
-version = "0.1.0"
+version = "0.2.0"
 description = "Google Drive CLI tool"
 authors = [{name = "Sebastien MORAND", email = "sebastien.morand@loreal.com"}]
 requires-python = ">=3.11"

@@ -257,8 +257,20 @@ async def sheets_unhide(spreadsheet_id: str, sheet_name: str) -> str:
 
 
 @mcp.tool(name="sheets_values_read")
-async def sheets_values_read(spreadsheet_id: str, sheet_name: str = "", range_name: str = "") -> str:
-    """Read data from a Google Sheet. Specify sheet_name for entire sheet or range_name for specific range (e.g., 'A1:C10')."""
+async def sheets_values_read(
+    spreadsheet_id: str, sheet_name: str = "", range_name: str = "", as_json: bool = True
+) -> str:
+    """Read data from a Google Sheet. Specify sheet_name for entire sheet or range_name for specific range (e.g., 'A1:C10').
+
+    Args:
+        spreadsheet_id: The ID of the spreadsheet
+        sheet_name: Name of the sheet to read (for entire sheet)
+        range_name: A1 notation range (e.g., 'A1:C10', 'Sheet1!B2:D5')
+        as_json: Return structured JSON format (default True) or plain string
+
+    Returns:
+        JSON-formatted table data as List[List] or plain string representation
+    """
     await initialize_services()
 
     if range_name:
@@ -266,20 +278,50 @@ async def sheets_values_read(spreadsheet_id: str, sheet_name: str = "", range_na
     else:
         values = sheets_service.read_entire_sheet(spreadsheet_id, sheet_name)
 
-    return str(values) if values else "No data found."
+    if not values:
+        return "No data found."
+
+    if as_json:
+        import json
+
+        return json.dumps(values, ensure_ascii=False, indent=2)
+    else:
+        return str(values)
 
 
 @mcp.tool(name="sheets_values_set")
 async def sheets_values_set(spreadsheet_id: str, range_name: str, values: str, formula: bool = False) -> str:
-    """Set values in Google Sheet cells. Values can be comma-separated or JSON array. Set formula=True for formula input."""
+    """Set values in Google Sheet cells.
+
+    Args:
+        spreadsheet_id: The ID of the spreadsheet
+        range_name: A1 notation range (e.g., 'A1:C3', 'Sheet1!B2:D4')
+        values: Table data as JSON List[List] (e.g., '[["A1","B1"],["A2","B2"]]') or comma-separated for single row
+        formula: Set to True if values contain formulas
+
+    Examples:
+        Single row: values = "Value1,Value2,Value3"
+        Multiple rows: values = '[["Row1Col1","Row1Col2"],["Row2Col1","Row2Col2"]]'
+        With formulas: values = '[["=A1+B1","=SUM(A:A)"]]', formula=True
+
+    Returns:
+        Success message with number of updated cells
+    """
     await initialize_services()
 
-    # Parse values - support JSON array or comma-separated
+    # Parse values - support JSON List[List] or comma-separated for single row
     if values.startswith("["):
         import json
 
-        parsed_values = json.loads(values)
+        try:
+            parsed_values = json.loads(values)
+            # Ensure it's a list of lists
+            if parsed_values and not isinstance(parsed_values[0], list):
+                parsed_values = [parsed_values]  # Convert single row to List[List]
+        except json.JSONDecodeError:
+            return 'Error: Invalid JSON format. Use format like \'[["A1","B1"],["A2","B2"]]\' for table data.'
     else:
+        # Single row comma-separated
         parsed_values = [v.strip() for v in values.split(",")]
 
     if formula:
@@ -589,6 +631,177 @@ async def sheets_copy(
                 output.append(f"  ✅ {sheet_result['source_sheet']} → {sheet_result['target_sheet']}")
 
         return "\n".join(output)
+
+
+# Sheets formatting tools
+@mcp.tool(name="sheets_format_range")
+async def sheets_format_range(
+    spreadsheet_id: str,
+    range_name: str,
+    bold: bool = False,
+    italic: bool = False,
+    underline: bool = False,
+    strikethrough: bool = False,
+    font_family: str = "",
+    font_size: int = 0,
+    text_color: str = "",
+    background_color: str = "",
+    horizontal_align: str = "",
+    vertical_align: str = "",
+    borders: str = "",
+    number_format: str = "",
+) -> str:
+    """Apply formatting to a range in Google Sheets using A1 notation.
+
+    Args:
+        spreadsheet_id: The ID of the spreadsheet
+        range_name: A1 notation range (e.g., 'A1:C3', 'Sheet1!B2:D4', 'A:A' for entire column, '1:1' for entire row)
+        bold: Make text bold
+        italic: Make text italic
+        underline: Add underline
+        strikethrough: Add strikethrough
+        font_family: Font family name (e.g., 'Arial', 'Times New Roman')
+        font_size: Font size in points
+        text_color: Text color (hex like '#FF0000' or name like 'red')
+        background_color: Background color (hex like '#FFFF00' or name like 'yellow')
+        horizontal_align: Horizontal alignment ('LEFT', 'CENTER', 'RIGHT')
+        vertical_align: Vertical alignment ('TOP', 'MIDDLE', 'BOTTOM')
+        borders: Border style ('all', 'thick', 'none')
+        number_format: Number format pattern (e.g., '$#,##0.00', '0.00%', 'mm/dd/yyyy')
+
+    Examples:
+        Header row: bold=True, background_color='lightgray', horizontal_align='CENTER'
+        Currency column: number_format='$#,##0.00'
+        Entire column bold: range_name='A:A', bold=True
+
+    Returns:
+        Success message confirming formatting application
+    """
+    await initialize_services()
+
+    # Build format options dictionary
+    format_options = {}
+
+    # Text formatting
+    if bold or italic or underline or strikethrough or font_family or font_size:
+        text_format = {}
+        if bold:
+            text_format["bold"] = True
+        if italic:
+            text_format["italic"] = True
+        if underline:
+            text_format["underline"] = True
+        if strikethrough:
+            text_format["strikethrough"] = True
+        if font_family:
+            text_format["font_family"] = font_family
+        if font_size > 0:
+            text_format["font_size"] = font_size
+        format_options["text_format"] = text_format
+
+    # Colors (convert hex/names to RGB values if needed)
+    if text_color:
+        format_options["text_color"] = text_color
+    if background_color:
+        format_options["background_color"] = background_color
+
+    # Alignment
+    if horizontal_align:
+        format_options["horizontal_align"] = horizontal_align.upper()
+    if vertical_align:
+        format_options["vertical_align"] = vertical_align.upper()
+
+    # Borders
+    if borders:
+        if borders.lower() == "all":
+            format_options["borders"] = "all"
+        elif borders.lower() == "thick":
+            format_options["borders"] = "thick"
+        elif borders.lower() == "none":
+            format_options["borders"] = "none"
+
+    # Number format
+    if number_format:
+        format_options["number_format"] = number_format
+
+    if not format_options:
+        return "No formatting options specified. Please provide at least one formatting parameter."
+
+    try:
+        result = sheets_service.format_range(spreadsheet_id, range_name, format_options)
+        return f"Formatting applied successfully to range '{range_name}'"
+    except Exception as e:
+        return f"Error applying formatting: {str(e)}"
+
+
+@mcp.tool(name="sheets_copy_format")
+async def sheets_copy_format(spreadsheet_id: str, source_range: str, target_range: str) -> str:
+    """Copy formatting from one range to another in Google Sheets.
+
+    Args:
+        spreadsheet_id: The ID of the spreadsheet
+        source_range: A1 notation source range (e.g., 'A1:C3', 'Sheet1!B2:D4')
+        target_range: A1 notation target range (e.g., 'E1:G3', 'Sheet2!F2:H4')
+
+    Examples:
+        Copy header formatting: source_range='A1:D1', target_range='A5:D5'
+        Copy table formatting: source_range='Sheet1!A1:C10', target_range='Sheet2!A1:C10'
+
+    Note:
+        If source and target ranges have different sizes, formatting will be applied with wrapping/clipping as needed.
+
+    Returns:
+        Success message confirming format copy operation
+    """
+    await initialize_services()
+
+    try:
+        result = await sheets_service.copy_format(spreadsheet_id, source_range, target_range)
+        return f"Formatting copied successfully from '{source_range}' to '{target_range}'"
+    except Exception as e:
+        return f"Error copying formatting: {str(e)}"
+
+
+@mcp.tool(name="sheets_set_column_width")
+async def sheets_set_column_width(
+    spreadsheet_id: str, sheet_name: str, start_column: str, end_column: str, width: int
+) -> str:
+    """Set column width(s) in Google Sheets.
+
+    Args:
+        spreadsheet_id: The ID of the spreadsheet
+        sheet_name: Name of the sheet
+        start_column: Starting column letter (e.g., 'A')
+        end_column: Ending column letter (e.g., 'C') - use same as start_column for single column
+        width: Width in pixels
+
+    Examples:
+        Single column: start_column='A', end_column='A', width=150
+        Multiple columns: start_column='B', end_column='D', width=100
+
+    Returns:
+        Success message confirming column width change
+    """
+    await initialize_services()
+
+    try:
+        # Get sheet ID
+        sheet_id = sheets_service.get_sheet_id_by_name(spreadsheet_id, sheet_name)
+        if sheet_id is None:
+            return f"Error: Sheet '{sheet_name}' not found"
+
+        # Convert column letters to indices (A=0, B=1, etc.)
+        start_col_index = ord(start_column.upper()) - ord("A")
+        end_col_index = ord(end_column.upper()) - ord("A")
+
+        result = sheets_service.set_column_width(spreadsheet_id, sheet_id, start_col_index, end_col_index, width)
+
+        if start_column == end_column:
+            return f"Column '{start_column}' width set to {width} pixels"
+        else:
+            return f"Columns '{start_column}' to '{end_column}' width set to {width} pixels"
+    except Exception as e:
+        return f"Error setting column width: {str(e)}"
 
 
 # Translation tool

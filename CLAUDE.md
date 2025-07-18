@@ -80,8 +80,8 @@ godri/
 ```
 
 ### Dependencies Management
-- **Package Manager**: UV (`uv install .`, `uv add`, `uv sync` for development)
-- **Installation**: `uv install .` (installs `godri` command globally)
+- **Package Manager**: UV (`uv run pip install -e .`, `uv add`, `uv sync` for development)
+- **Installation**: `uv run pip install -e .` (installs `godri` command globally in development mode)
 - **Python Version**: 3.11+
 - **Key Dependencies**: google-api-python-client, mcp, fastapi, aiofiles, aiohttp
 
@@ -90,7 +90,7 @@ godri/
 ### Development
 ```bash
 # Option 1: Install package (development mode) - Recommended
-uv install -e .
+uv run pip install -e .
 godri <command>
 
 # Option 2: Run directly from source (for local testing before install)
@@ -152,6 +152,8 @@ export GODRI_CLIENT_FILE="/path/to/client_secret.json"
 - **FastMCP Integration**: Uses FastMCP framework
 - **Service Initialization**: Lazy loading with global service instances
 - **Tool Documentation**: Comprehensive docstrings for all MCP tools
+- **Structured Data**: List[List] support for sheets values operations
+- **Complete Formatting**: Full parity with CLI formatting capabilities (format_range, copy_format, set_column_width)
 
 ### CLI Command Structure (`main.py`)
 - **Hierarchical Commands**: drive, docs, sheets, slides, translate, mcp
@@ -180,6 +182,9 @@ export GODRI_CLIENT_FILE="/path/to/client_secret.json"
 - **Tool Definitions**: All tools use @mcp.tool decorator
 - **Service Access**: Global service instances with lazy initialization
 - **Error Handling**: Comprehensive try/catch with user-friendly messages
+- **Sheets Tools**: 13 comprehensive tools including formatting (format_range, copy_format, set_column_width)
+- **Structured Data**: JSON List[List] support for values_read/values_set operations
+- **Full CLI Parity**: All CLI formatting capabilities available through MCP tools
 
 ## Testing Approach
 

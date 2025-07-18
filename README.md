@@ -9,6 +9,7 @@ A comprehensive Python CLI tool for Google Drive and Google Workspace operations
 - **Google Sheets**: Comprehensive spreadsheet operations (create, manage sheets, read/write values, formulas, formatting, rows/columns)
 - **Google Slides**: Comprehensive presentation operations (create, themes, layouts, slides, content management)
 - **Translation**: Translate text using Google Translate API
+- **MCP Server**: Model Context Protocol integration with 13+ sheets tools and structured data support
 - **Authentication**: Secure OAuth2 flow with persistent tokens
 
 ## Installation
@@ -19,7 +20,7 @@ A comprehensive Python CLI tool for Google Drive and Google Workspace operations
 ```bash
 git clone https://github.com/sebastienmorand-loreal/godri.git
 cd godri
-uv install .
+uv run pip install -e .
 ```
 
 ## Setup
