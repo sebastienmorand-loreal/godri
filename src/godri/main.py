@@ -20,6 +20,7 @@ from godri.services.docs_service import DocsService
 from godri.services.sheets_service import SheetsService
 from godri.services.slides_service import SlidesService
 from godri.services.translate_service import TranslateService
+from godri.services.speech_service import SpeechService
 from godri.services.mcp_server import mcp
 
 
@@ -34,6 +35,7 @@ class GodriCLI:
         self.sheets_service = None
         self.slides_service = None
         self.translate_service = None
+        self.speech_service = None
 
     async def initialize_services(self):
         """Initialize all services."""
@@ -43,12 +45,14 @@ class GodriCLI:
         self.sheets_service = SheetsService(self.auth_service)
         self.slides_service = SlidesService(self.auth_service)
         self.translate_service = TranslateService(self.auth_service)
+        self.speech_service = SpeechService(self.auth_service)
 
         await self.drive_service.initialize()
         await self.docs_service.initialize()
         await self.sheets_service.initialize()
         await self.slides_service.initialize()
         await self.translate_service.initialize()
+        await self.speech_service.initialize()
 
     async def handle_auth(self, args):
         """Handle authentication command."""
@@ -186,6 +190,55 @@ class GodriCLI:
                 print(f"  - Detected source: {result['detectedSourceLanguage']}")
         except Exception as e:
             self.logger.error("Translation failed: %s", str(e))
+            sys.exit(1)
+
+    async def handle_speech(self, args):
+        """Handle speech-to-text command."""
+        try:
+            # Detect audio properties for optimal settings
+            properties = self.speech_service.detect_audio_properties(args.audio_file)
+
+            # Choose transcription method based on file size
+            if properties["recommended_method"] == "long" and not args.force_short:
+                self.logger.info("Using long-running transcription for large file")
+                result = self.speech_service.transcribe_audio_long(
+                    args.audio_file,
+                    getattr(args, "language", "en-US"),
+                    getattr(args, "punctuation", True),
+                    getattr(args, "word_timing", False),
+                    getattr(args, "sample_rate", None),
+                )
+            else:
+                result = self.speech_service.transcribe_audio_file(
+                    args.audio_file,
+                    getattr(args, "language", "en-US"),
+                    getattr(args, "punctuation", True),
+                    getattr(args, "word_timing", False),
+                    getattr(args, "sample_rate", None),
+                )
+
+            print(f"Speech-to-Text Transcription:")
+            print(f"  - Audio file: {result['audio_file']}")
+            print(f"  - Language: {result['language_code']}")
+            print(f"  - Format: {result['encoding']}")
+            print(f"  - Results found: {result['total_results']}")
+            print()
+
+            for i, transcript in enumerate(result["transcripts"], 1):
+                print(f"Transcript {i}:")
+                print(f"  Text: {transcript['transcript']}")
+                print(f"  Confidence: {transcript['confidence']:.2f}")
+
+                if args.word_timing and "words" in transcript:
+                    print("  Word timing:")
+                    for word in transcript["words"][:10]:  # Show first 10 words
+                        print(f"    {word['word']}: {word['start_time']:.2f}s - {word['end_time']:.2f}s")
+                    if len(transcript["words"]) > 10:
+                        print(f"    ... and {len(transcript['words']) - 10} more words")
+                print()
+
+        except Exception as e:
+            self.logger.error("Speech transcription failed: %s", str(e))
             sys.exit(1)
 
     async def handle_read_doc(self, args):
@@ -1467,6 +1520,23 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
         translate_parser.add_argument("target_language", help="Target language code (e.g., 'fr', 'es')")
         translate_parser.add_argument("--source-language", "-s", help="Source language code")
 
+        # SPEECH command
+        speech_parser = subparsers.add_parser("speech", help="Speech-to-text transcription")
+        speech_parser.add_argument("audio_file", help="Path to audio file (MP3, WAV, OPUS)")
+        speech_parser.add_argument(
+            "--language", "-l", default="en-US", help="Language code (e.g., 'en-US', 'fr-FR', 'es-ES')"
+        )
+        speech_parser.add_argument(
+            "--no-punctuation", dest="punctuation", action="store_false", help="Disable automatic punctuation"
+        )
+        speech_parser.add_argument("--word-timing", "-w", action="store_true", help="Include word timing information")
+        speech_parser.add_argument(
+            "--sample-rate", type=int, help="Audio sample rate in Hz (auto-detected if not specified)"
+        )
+        speech_parser.add_argument(
+            "--force-short", action="store_true", help="Force short-form transcription even for large files"
+        )
+
         # MCP command
         mcp_parser = subparsers.add_parser("mcp", help="Run MCP server")
         mcp_parser.add_argument("transport", choices=["stdio", "http"], help="Transport type (stdio or http)")
@@ -1502,6 +1572,7 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
             "sheets": self.handle_sheets,
             "slides": self.handle_slides,
             "translate": self.handle_translate,
+            "speech": self.handle_speech,
             "mcp": self.handle_mcp,
         }
 

@@ -11,6 +11,7 @@ from .docs_service import DocsService
 from .sheets_service import SheetsService
 from .slides_service import SlidesService
 from .translate_service import TranslateService
+from .speech_service import SpeechService
 
 # Initialize FastMCP server
 mcp = FastMCP("Godri")
@@ -22,6 +23,7 @@ docs_service: Optional[DocsService] = None
 sheets_service: Optional[SheetsService] = None
 slides_service: Optional[SlidesService] = None
 translate_service: Optional[TranslateService] = None
+speech_service: Optional[SpeechService] = None
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +76,7 @@ def _convert_color_to_rgb(color: str) -> dict:
 
 async def initialize_services():
     """Initialize all Google services."""
-    global auth_service, drive_service, docs_service, sheets_service, slides_service, translate_service
+    global auth_service, drive_service, docs_service, sheets_service, slides_service, translate_service, speech_service
 
     if auth_service is not None:
         return  # Already initialized
@@ -95,12 +97,14 @@ async def initialize_services():
     sheets_service = SheetsService(auth_service)
     slides_service = SlidesService(auth_service)
     translate_service = TranslateService(auth_service)
+    speech_service = SpeechService(auth_service)
 
     await drive_service.initialize()
     await docs_service.initialize()
     await sheets_service.initialize()
     await slides_service.initialize()
     await translate_service.initialize()
+    await speech_service.initialize()
 
     logger.info("All services initialized for MCP server")
 
@@ -1101,3 +1105,88 @@ async def translate_text(text: str, target_language: str, source_language: str =
 
     result = translate_service.translate_text(text, target_language, source_language if source_language else None)
     return str(result)
+
+
+# Speech-to-Text tool
+@mcp.tool(name="speech_to_text")
+async def speech_to_text(
+    audio_file_path: str,
+    language_code: str = "en-US",
+    enable_punctuation: bool = True,
+    enable_word_timing: bool = False,
+    use_long_running: bool = False,
+) -> str:
+    """Transcribe audio file to text using Google Speech-to-Text API.
+
+    Args:
+        audio_file_path: Path to audio file (MP3, WAV, OPUS, FLAC)
+        language_code: Language code (e.g., 'en-US', 'fr-FR', 'es-ES')
+        enable_punctuation: Add automatic punctuation to transcription
+        enable_word_timing: Include word timing information in response
+        use_long_running: Force long-running transcription for large files
+
+    Examples:
+        Basic transcription: audio_file_path="recording.mp3"
+        French audio: audio_file_path="french.wav", language_code="fr-FR"
+        With timing: audio_file_path="meeting.opus", enable_word_timing=True
+        Long audio: audio_file_path="lecture.mp3", use_long_running=True
+
+    Returns:
+        JSON-formatted transcription results with confidence scores and metadata
+    """
+    await initialize_services()
+
+    try:
+        # Check if file exists
+        import os
+
+        if not os.path.exists(audio_file_path):
+            return f"❌ Error: Audio file not found: {audio_file_path}"
+
+        # Detect audio properties
+        properties = speech_service.detect_audio_properties(audio_file_path)
+
+        # Choose transcription method
+        if use_long_running or properties["recommended_method"] == "long":
+            result = speech_service.transcribe_audio_long(
+                audio_file_path, language_code, enable_punctuation, enable_word_timing
+            )
+        else:
+            result = speech_service.transcribe_audio_file(
+                audio_file_path, language_code, enable_punctuation, enable_word_timing
+            )
+
+        # Format response
+        import json
+
+        # Create structured output
+        output = {
+            "audio_info": {
+                "file_path": result["audio_file"],
+                "encoding": result["encoding"],
+                "language": result["language_code"],
+                "total_results": result["total_results"],
+                "file_size_mb": round(properties["file_size_bytes"] / (1024 * 1024), 2),
+            },
+            "transcriptions": [],
+        }
+
+        for i, transcript in enumerate(result["transcripts"]):
+            transcript_data = {
+                "transcript_id": i + 1,
+                "text": transcript["transcript"],
+                "confidence": round(transcript["confidence"], 3),
+            }
+
+            if enable_word_timing and "words" in transcript:
+                transcript_data["word_count"] = len(transcript["words"])
+                transcript_data["duration_seconds"] = transcript["words"][-1]["end_time"] if transcript["words"] else 0
+                # Include first few words as sample
+                transcript_data["sample_words"] = transcript["words"][:5]
+
+            output["transcriptions"].append(transcript_data)
+
+        return f"✅ Speech transcription completed successfully\n\n{json.dumps(output, ensure_ascii=False, indent=2)}"
+
+    except Exception as e:
+        return f"❌ Error during speech transcription: {str(e)}"

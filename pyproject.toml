@@ -17,6 +17,7 @@ dependencies = [
     "uvicorn>=0.27.0",
     "starlette>=0.47.1",
     "fastapi>=0.116.1",
+    "google-cloud-speech>=2.33.0",
 ]
 
 [project.scripts]
