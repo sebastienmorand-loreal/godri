@@ -550,6 +550,10 @@ class GodriCLI:
             await self.handle_sheets_copy(args)
         elif args.sheets_command == "translate":
             await self.handle_translate_sheet(args)
+        elif args.sheets_command == "import-csv":
+            await self.handle_import_csv(args)
+        elif args.sheets_command == "rename":
+            await self.handle_rename_sheet(args)
 
     async def handle_sheet_values(self, args):
         """Handle sheet values subcommands."""
@@ -641,6 +645,53 @@ class GodriCLI:
 
         except Exception as e:
             self.logger.error("Failed to translate sheet range: %s", str(e))
+            sys.exit(1)
+
+    async def handle_import_csv(self, args):
+        """Handle CSV import to Google Sheets."""
+        try:
+            if hasattr(args, "csv_data") and args.csv_data:
+                # Import from CSV data string
+                result = self.sheets_service.import_csv_data(
+                    args.csv_data,
+                    args.spreadsheet_id,
+                    getattr(args, "sheet_name", "Sheet1"),
+                    getattr(args, "start_range", "A1"),
+                )
+                print(f"CSV data imported successfully to sheet '{result['sheet_name']}'")
+                print(f"Range: {result['range']}")
+                print(f"Imported {result['rows_imported']} rows and {result['columns_imported']} columns")
+                print(f"Updated {result['cells_updated']} cells")
+            else:
+                # Import from CSV file
+                result = self.sheets_service.import_csv_file(
+                    args.csv_file,
+                    getattr(args, "spreadsheet_id", None),
+                    getattr(args, "sheet_name", "Sheet1"),
+                    getattr(args, "folder_id", None),
+                )
+
+                if result.get("created_from_csv"):
+                    print(f"Created new spreadsheet '{result['name']}' from CSV file")
+                    print(f"Spreadsheet ID: {result['spreadsheet_id']}")
+                else:
+                    print(f"CSV file imported to sheet '{result['sheet_name']}'")
+                    print(f"Range: {result['range']}")
+                    print(f"Imported {result['rows_imported']} rows and {result['columns_imported']} columns")
+                    print(f"Updated {result['cells_updated']} cells")
+
+        except Exception as e:
+            self.logger.error("Failed to import CSV: %s", str(e))
+            sys.exit(1)
+
+    async def handle_rename_sheet(self, args):
+        """Handle sheet rename operation."""
+        try:
+            result = self.sheets_service.rename_sheet(args.spreadsheet_id, args.sheet_name, args.new_name)
+            print(f"Sheet '{args.sheet_name}' renamed to '{args.new_name}' successfully")
+
+        except Exception as e:
+            self.logger.error("Failed to rename sheet: %s", str(e))
             sys.exit(1)
 
     async def handle_slides_themes(self, args):
@@ -1214,6 +1265,28 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
         sheets_translate_parser.add_argument(
             "--source-language", "-s", help="Source language code (auto-detect if not specified)"
         )
+
+        # sheets import-csv
+        sheets_import_csv_parser = sheets_subparsers.add_parser("import-csv", help="Import CSV data to Google Sheets")
+        csv_input_group = sheets_import_csv_parser.add_mutually_exclusive_group(required=True)
+        csv_input_group.add_argument("--csv-file", help="Path to CSV file to import")
+        csv_input_group.add_argument("--csv-data", help="CSV data as string to import")
+        sheets_import_csv_parser.add_argument(
+            "--spreadsheet-id", help="Target spreadsheet ID (creates new if not provided)"
+        )
+        sheets_import_csv_parser.add_argument(
+            "--sheet-name", default="Sheet1", help="Target sheet name (default: Sheet1)"
+        )
+        sheets_import_csv_parser.add_argument(
+            "--start-range", default="A1", help="Starting range for import (default: A1)"
+        )
+        sheets_import_csv_parser.add_argument("--folder-id", help="Folder ID for new spreadsheet (if creating)")
+
+        # sheets rename
+        sheets_rename_parser = sheets_subparsers.add_parser("rename", help="Rename a sheet")
+        sheets_rename_parser.add_argument("spreadsheet_id", help="Spreadsheet ID")
+        sheets_rename_parser.add_argument("sheet_name", help="Current sheet name")
+        sheets_rename_parser.add_argument("new_name", help="New sheet name")
 
         # SLIDES command
         slides_parser = subparsers.add_parser("slides", help="Google Slides operations")

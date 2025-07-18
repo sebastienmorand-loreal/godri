@@ -26,6 +26,52 @@ translate_service: Optional[TranslateService] = None
 logger = logging.getLogger(__name__)
 
 
+def _convert_color_to_rgb(color: str) -> dict:
+    """Convert color (hex, name, or RGB) to Google Sheets API RGB format (0.0-1.0)."""
+    import re
+
+    # Common color names to RGB
+    color_names = {
+        "white": (1.0, 1.0, 1.0),
+        "black": (0.0, 0.0, 0.0),
+        "red": (1.0, 0.0, 0.0),
+        "green": (0.0, 0.8, 0.0),
+        "blue": (0.0, 0.0, 1.0),
+        "yellow": (1.0, 1.0, 0.0),
+        "cyan": (0.0, 1.0, 1.0),
+        "magenta": (1.0, 0.0, 1.0),
+        "orange": (1.0, 0.65, 0.0),
+        "purple": (0.5, 0.0, 0.5),
+        "pink": (1.0, 0.75, 0.8),
+        "brown": (0.65, 0.16, 0.16),
+        "gray": (0.5, 0.5, 0.5),
+        "grey": (0.5, 0.5, 0.5),
+        "lightgray": (0.83, 0.83, 0.83),
+        "lightgrey": (0.83, 0.83, 0.83),
+        "darkgray": (0.66, 0.66, 0.66),
+        "darkgrey": (0.66, 0.66, 0.66),
+    }
+
+    color_lower = color.lower().strip()
+
+    # Check if it's a named color
+    if color_lower in color_names:
+        r, g, b = color_names[color_lower]
+        return {"red": r, "green": g, "blue": b}
+
+    # Check if it's a hex color
+    hex_match = re.match(r"^#?([0-9a-fA-F]{6})$", color.strip())
+    if hex_match:
+        hex_color = hex_match.group(1)
+        r = int(hex_color[0:2], 16) / 255.0
+        g = int(hex_color[2:4], 16) / 255.0
+        b = int(hex_color[4:6], 16) / 255.0
+        return {"red": r, "green": g, "blue": b}
+
+    # Default to black if color not recognized
+    return {"red": 0.0, "green": 0.0, "blue": 0.0}
+
+
 async def initialize_services():
     """Initialize all Google services."""
     global auth_service, drive_service, docs_service, sheets_service, slides_service, translate_service
@@ -290,19 +336,22 @@ async def sheets_values_read(
 
 
 @mcp.tool(name="sheets_values_set")
-async def sheets_values_set(spreadsheet_id: str, range_name: str, values: str, formula: bool = False) -> str:
-    """Set values in Google Sheet cells.
+async def sheets_values_set(spreadsheet_id: str, range_name: str, values: str) -> str:
+    """Set VALUES (not formulas) in Google Sheet cells. For formulas, use sheets_set_formula instead.
 
     Args:
         spreadsheet_id: The ID of the spreadsheet
         range_name: A1 notation range (e.g., 'A1:C3', 'Sheet1!B2:D4')
         values: Table data as JSON List[List] (e.g., '[["A1","B1"],["A2","B2"]]') or comma-separated for single row
-        formula: Set to True if values contain formulas
 
     Examples:
         Single row: values = "Value1,Value2,Value3"
         Multiple rows: values = '[["Row1Col1","Row1Col2"],["Row2Col1","Row2Col2"]]'
-        With formulas: values = '[["=A1+B1","=SUM(A:A)"]]', formula=True
+        Numbers and text: values = '[["Name","Age","Score"],["John","25","95.5"]]'
+
+    Note:
+        This tool sets LITERAL VALUES only. Any text starting with "=" will be treated as text, not a formula.
+        To set formulas, use the sheets_set_formula tool instead.
 
     Returns:
         Success message with number of updated cells
@@ -324,12 +373,56 @@ async def sheets_values_set(spreadsheet_id: str, range_name: str, values: str, f
         # Single row comma-separated
         parsed_values = [v.strip() for v in values.split(",")]
 
-    if formula:
-        result = sheets_service.set_formula(spreadsheet_id, range_name, values)
-    else:
-        result = sheets_service.set_values_in_range(spreadsheet_id, range_name, parsed_values)
+    # Always set as values (not formulas) - uses RAW input option
+    result = sheets_service.set_values_in_range(spreadsheet_id, range_name, parsed_values)
 
     return f"Values set successfully in range '{range_name}'. Updated {result.get('updatedCells', 0)} cells"
+
+
+@mcp.tool(name="sheets_set_formula")
+async def sheets_set_formula(spreadsheet_id: str, range_name: str, formulas: str) -> str:
+    """Set FORMULAS (not values) in Google Sheet cells. For literal values, use sheets_values_set instead.
+
+    Args:
+        spreadsheet_id: The ID of the spreadsheet
+        range_name: A1 notation range (e.g., 'A1', 'A1:C3', 'Sheet1!B2:D4')
+        formulas: Single formula or JSON List[List] of formulas for table format
+
+    Examples:
+        Single formula: formulas = "SUM(A1:A10)"
+        Formula with quotes: formulas = "'B8/1073741824" (quotes are automatically cleaned)
+        Multiple formulas: formulas = '[["=A1+B1","=A1*2"],["=A2+B2","=A2*2"]]'
+        Complex formulas: formulas = '[["=VLOOKUP(A1,Sheet2!A:B,2,FALSE)","=IF(B1>0,\"Positive\",\"Negative\")"]]'
+
+    Note:
+        This tool sets FORMULAS that will be calculated by Google Sheets.
+        - Leading quotes (', ") are automatically removed to prevent display issues
+        - Formulas are automatically prefixed with "=" if not provided
+        - Use sheets_values_set for literal text/numbers
+        - Supports both single formulas and formula tables
+
+    Returns:
+        Success message with number of updated cells
+    """
+    await initialize_services()
+
+    # Parse formulas - support single formula or JSON List[List] for table format
+    if formulas.startswith("["):
+        import json
+
+        try:
+            parsed_formulas = json.loads(formulas)
+            # Ensure it's a list of lists
+            if parsed_formulas and not isinstance(parsed_formulas[0], list):
+                parsed_formulas = [parsed_formulas]  # Convert single row to List[List]
+            result = sheets_service.set_formulas_in_range(spreadsheet_id, range_name, parsed_formulas)
+        except json.JSONDecodeError:
+            return 'Error: Invalid JSON format. Use format like \'[["=A1+B1","=A1*2"]]\' for formula tables.'
+    else:
+        # Single formula
+        result = sheets_service.set_formulas_in_range(spreadsheet_id, range_name, formulas)
+
+    return f"Formulas set successfully in range '{range_name}'. Updated {result.get('updatedCells', 0)} cells"
 
 
 @mcp.tool(name="sheets_translate")
@@ -679,11 +772,11 @@ async def sheets_format_range(
     """
     await initialize_services()
 
-    # Build format options dictionary
+    # Build format options dictionary using proper Google Sheets API format
     format_options = {}
 
     # Text formatting
-    if bold or italic or underline or strikethrough or font_family or font_size:
+    if bold or italic or underline or strikethrough or font_family or font_size or text_color:
         text_format = {}
         if bold:
             text_format["bold"] = True
@@ -694,35 +787,53 @@ async def sheets_format_range(
         if strikethrough:
             text_format["strikethrough"] = True
         if font_family:
-            text_format["font_family"] = font_family
+            text_format["fontFamily"] = font_family
         if font_size > 0:
-            text_format["font_size"] = font_size
-        format_options["text_format"] = text_format
+            text_format["fontSize"] = font_size
+        if text_color:
+            # Convert color to RGB format
+            rgb_color = _convert_color_to_rgb(text_color)
+            text_format["foregroundColor"] = rgb_color
+        format_options["textFormat"] = text_format
 
-    # Colors (convert hex/names to RGB values if needed)
-    if text_color:
-        format_options["text_color"] = text_color
+    # Background color
     if background_color:
-        format_options["background_color"] = background_color
+        rgb_color = _convert_color_to_rgb(background_color)
+        format_options["backgroundColor"] = rgb_color
 
     # Alignment
     if horizontal_align:
-        format_options["horizontal_align"] = horizontal_align.upper()
+        format_options["horizontalAlignment"] = horizontal_align.upper()
     if vertical_align:
-        format_options["vertical_align"] = vertical_align.upper()
+        format_options["verticalAlignment"] = vertical_align.upper()
 
     # Borders
     if borders:
         if borders.lower() == "all":
-            format_options["borders"] = "all"
+            format_options["borders"] = {
+                "top": {"style": "SOLID", "width": 1},
+                "bottom": {"style": "SOLID", "width": 1},
+                "left": {"style": "SOLID", "width": 1},
+                "right": {"style": "SOLID", "width": 1},
+            }
         elif borders.lower() == "thick":
-            format_options["borders"] = "thick"
+            format_options["borders"] = {
+                "top": {"style": "SOLID", "width": 3},
+                "bottom": {"style": "SOLID", "width": 3},
+                "left": {"style": "SOLID", "width": 3},
+                "right": {"style": "SOLID", "width": 3},
+            }
         elif borders.lower() == "none":
-            format_options["borders"] = "none"
+            format_options["borders"] = {
+                "top": {"style": "NONE"},
+                "bottom": {"style": "NONE"},
+                "left": {"style": "NONE"},
+                "right": {"style": "NONE"},
+            }
 
     # Number format
     if number_format:
-        format_options["number_format"] = number_format
+        format_options["numberFormat"] = {"pattern": number_format}
 
     if not format_options:
         return "No formatting options specified. Please provide at least one formatting parameter."
@@ -802,6 +913,152 @@ async def sheets_set_column_width(
             return f"Columns '{start_column}' to '{end_column}' width set to {width} pixels"
     except Exception as e:
         return f"Error setting column width: {str(e)}"
+
+
+# CSV Import tools
+@mcp.tool(name="sheets_import_csv_file")
+async def sheets_import_csv_file(
+    csv_file_path: str, spreadsheet_id: str = "", sheet_name: str = "Sheet1", folder_id: str = ""
+) -> str:
+    """Import a CSV file to Google Sheets.
+
+    Args:
+        csv_file_path: Path to local CSV file to import
+        spreadsheet_id: Target spreadsheet ID (creates new spreadsheet if empty)
+        sheet_name: Target sheet name (default: Sheet1)
+        folder_id: Folder ID for new spreadsheet (if creating new)
+
+    Examples:
+        Import to new spreadsheet: csv_file_path="/path/to/data.csv"
+        Import to existing sheet: csv_file_path="/path/to/data.csv", spreadsheet_id="abc123", sheet_name="Data"
+
+    Returns:
+        Success message with import details and spreadsheet information
+    """
+    await initialize_services()
+
+    try:
+        result = sheets_service.import_csv_file(
+            csv_file_path, spreadsheet_id if spreadsheet_id else None, sheet_name, folder_id if folder_id else None
+        )
+
+        if result.get("created_from_csv"):
+            return f"✅ Created new spreadsheet '{result['name']}' from CSV file\nSpreadsheet ID: {result['spreadsheet_id']}\nOriginal file: {result['original_file']}"
+        else:
+            return f"✅ CSV file imported successfully to sheet '{result['sheet_name']}'\nRange: {result['range']}\nImported {result['rows_imported']} rows and {result['columns_imported']} columns\nUpdated {result['cells_updated']} cells"
+    except Exception as e:
+        return f"❌ Error importing CSV file: {str(e)}"
+
+
+@mcp.tool(name="sheets_import_csv_data")
+async def sheets_import_csv_data(
+    spreadsheet_id: str, csv_data: str, sheet_name: str = "Sheet1", start_range: str = "A1"
+) -> str:
+    """Import CSV data string to Google Sheets.
+
+    Args:
+        spreadsheet_id: Target spreadsheet ID
+        csv_data: CSV content as string (e.g., "Name,Age\nJohn,25\nJane,30")
+        sheet_name: Target sheet name (default: Sheet1)
+        start_range: Starting cell range for import (default: A1)
+
+    Examples:
+        Simple data: csv_data="Name,Age\nJohn,25\nJane,30", spreadsheet_id="abc123"
+        Specific location: csv_data="Product,Price\nApple,1.50", start_range="B5"
+
+    Returns:
+        Success message with import details
+    """
+    await initialize_services()
+
+    try:
+        result = sheets_service.import_csv_data(csv_data, spreadsheet_id, sheet_name, start_range)
+
+        return f"✅ CSV data imported successfully to sheet '{result['sheet_name']}'\nRange: {result['range']}\nImported {result['rows_imported']} rows and {result['columns_imported']} columns\nUpdated {result['cells_updated']} cells"
+    except Exception as e:
+        return f"❌ Error importing CSV data: {str(e)}"
+
+
+@mcp.tool(name="sheets_rename")
+async def sheets_rename(spreadsheet_id: str, sheet_name: str, new_name: str) -> str:
+    """Rename a sheet in Google Sheets.
+
+    Args:
+        spreadsheet_id: The ID of the spreadsheet
+        sheet_name: Current name of the sheet to rename
+        new_name: New name for the sheet
+
+    Examples:
+        Rename sheet: spreadsheet_id="abc123", sheet_name="Sheet1", new_name="Data Sheet"
+        Rename with spaces: sheet_name="Old Name", new_name="New Name"
+
+    Returns:
+        Success message confirming the sheet rename operation
+    """
+    await initialize_services()
+
+    try:
+        result = sheets_service.rename_sheet(spreadsheet_id, sheet_name, new_name)
+        return f"✅ Sheet '{sheet_name}' renamed to '{new_name}' successfully"
+    except Exception as e:
+        return f"❌ Error renaming sheet: {str(e)}"
+
+
+# Comprehensive range reading tool
+@mcp.tool(name="sheets_read_range_details")
+async def sheets_read_range_details(spreadsheet_id: str, range_name: str) -> str:
+    """Get comprehensive details about a range including formulas, values, formatting, and errors.
+
+    Args:
+        spreadsheet_id: The ID of the spreadsheet
+        range_name: A1 notation range (e.g., 'A1', 'A1:C3', 'Sheet1!B2:D4')
+
+    Returns:
+        JSON-formatted detailed information about each cell in the range including:
+        - Cell address (A1 notation)
+        - Display value (what user sees)
+        - Effective value (calculated result)
+        - User entered value (raw input)
+        - Formula (if cell contains formula)
+        - Error information (if formula has errors)
+        - Complete formatting details
+        - Hyperlinks and notes
+
+    Examples:
+        Single cell: range_name='A1'
+        Range: range_name='A1:C5'
+        Specific sheet: range_name='Sheet2!B2:D10'
+        Entire column: range_name='A:A'
+        Entire row: range_name='1:1'
+
+    Note:
+        This tool provides complete cell information including formulas, calculated values,
+        formatting, and error details. Use this when you need to understand the full
+        state of cells including their formulas and formatting.
+    """
+    await initialize_services()
+
+    try:
+        result = sheets_service.get_range_details(spreadsheet_id, range_name)
+
+        # Format the output for better readability
+        import json
+
+        # Create a more structured output
+        output = {
+            "range_info": {
+                "range": result["range"],
+                "spreadsheet_id": result["spreadsheet_id"],
+                "sheet_name": result["sheet_name"],
+                "total_cells": len(result["cells"]),
+            },
+            "cells": result["cells"],
+        }
+
+        return json.dumps(output, ensure_ascii=False, indent=2)
+
+    except Exception as e:
+        return f"❌ Error reading range details: {str(e)}"
 
 
 # Translation tool

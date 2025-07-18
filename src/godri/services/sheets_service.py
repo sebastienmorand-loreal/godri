@@ -240,6 +240,75 @@ class SheetsService:
         self.logger.info("Formula set successfully")
         return result
 
+    def _clean_formula_string(self, formula: str) -> str:
+        """Clean and prepare a formula string for Google Sheets.
+
+        Args:
+            formula: Raw formula string that may have quotes or other issues
+
+        Returns:
+            Cleaned formula string ready for Google Sheets API
+        """
+        if not formula:
+            return formula
+
+        # Strip whitespace
+        formula = formula.strip()
+
+        # Remove leading/trailing quotes that can cause issues
+        if (formula.startswith('"') and formula.endswith('"')) or (formula.startswith("'") and formula.endswith("'")):
+            formula = formula[1:-1]
+
+        # Remove any leading quotes that would prevent formula execution
+        formula = formula.lstrip("'\"")
+
+        # Ensure formula starts with =
+        if formula and not formula.startswith("="):
+            formula = "=" + formula
+
+        return formula
+
+    def set_formulas_in_range(
+        self, spreadsheet_id: str, range_name: str, formulas: Union[str, List[List[str]]]
+    ) -> Dict[str, Any]:
+        """Set formulas in a cell or range.
+
+        Args:
+            spreadsheet_id: The ID of the spreadsheet
+            range_name: A1 notation range (e.g., 'A1', 'A1:C3')
+            formulas: Single formula string or List[List] of formulas for table format
+
+        Examples:
+            Single formula: formulas = "SUM(A1:A10)"
+            Formula table: formulas = [["=A1+B1", "=A1*2"], ["=A2+B2", "=A2*2"]]
+        """
+        self.logger.info("Setting formulas in %s for spreadsheet: %s", range_name, spreadsheet_id)
+
+        if isinstance(formulas, str):
+            # Single formula
+            cleaned_formula = self._clean_formula_string(formulas)
+            body = {"values": [[cleaned_formula]]}
+        else:
+            # List of lists of formulas
+            formatted_formulas = []
+            for row in formulas:
+                formatted_row = []
+                for formula in row:
+                    cleaned_formula = self._clean_formula_string(formula)
+                    formatted_row.append(cleaned_formula)
+                formatted_formulas.append(formatted_row)
+            body = {"values": formatted_formulas}
+
+        result = (
+            self.service.spreadsheets()
+            .values()
+            .update(spreadsheetId=spreadsheet_id, range=range_name, valueInputOption="USER_ENTERED", body=body)
+            .execute()
+        )
+
+        self.logger.info("Formulas set successfully")
+        return result
+
     def set_values_in_range(
         self, spreadsheet_id: str, range_name: str, values: Union[str, int, float, List[List[Any]]]
     ) -> Dict[str, Any]:
@@ -326,6 +395,58 @@ class SheetsService:
         result = self.service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body=body).execute()
 
         self.logger.info("Sheet unhidden successfully")
+        return result
+
+    def rename_sheet(self, spreadsheet_id: str, sheet_name: str, new_name: str) -> Dict[str, Any]:
+        """Rename a sheet by name.
+
+        Args:
+            spreadsheet_id: The ID of the spreadsheet
+            sheet_name: Current name of the sheet to rename
+            new_name: New name for the sheet
+
+        Returns:
+            Dictionary with operation results
+
+        Raises:
+            ValueError: If sheet with sheet_name is not found
+        """
+        self.logger.info("Renaming sheet '%s' to '%s' in spreadsheet: %s", sheet_name, new_name, spreadsheet_id)
+
+        # Get sheet ID by name
+        sheet_id = self.get_sheet_id_by_name(spreadsheet_id, sheet_name)
+        if sheet_id is None:
+            raise ValueError(f"Sheet '{sheet_name}' not found in spreadsheet")
+
+        return self.rename_sheet_by_id(spreadsheet_id, sheet_id, new_name)
+
+    def rename_sheet_by_id(self, spreadsheet_id: str, sheet_id: int, new_name: str) -> Dict[str, Any]:
+        """Rename a sheet by ID.
+
+        Args:
+            spreadsheet_id: The ID of the spreadsheet
+            sheet_id: ID of the sheet to rename
+            new_name: New name for the sheet
+
+        Returns:
+            Dictionary with operation results
+        """
+        self.logger.info("Renaming sheet ID %d to '%s' in spreadsheet: %s", sheet_id, new_name, spreadsheet_id)
+
+        body = {
+            "requests": [
+                {
+                    "updateSheetProperties": {
+                        "properties": {"sheetId": sheet_id, "title": new_name},
+                        "fields": "title",
+                    }
+                }
+            ]
+        }
+
+        result = self.service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body=body).execute()
+
+        self.logger.info("Sheet renamed successfully to '%s'", new_name)
         return result
 
     def format_range(self, spreadsheet_id: str, range_name: str, format_options: Dict[str, Any]) -> Dict[str, Any]:
@@ -1122,3 +1243,381 @@ class SheetsService:
             "total_sheets": len(sheet_names),
             "preserve_formatting": preserve_formatting,
         }
+
+    # CSV Import Operations
+    def import_csv_file(
+        self,
+        csv_file_path: str,
+        spreadsheet_id: Optional[str] = None,
+        sheet_name: str = "Sheet1",
+        folder_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Import CSV file to Google Sheets using Drive API conversion.
+
+        Args:
+            csv_file_path: Path to local CSV file
+            spreadsheet_id: Target spreadsheet ID (creates new if None)
+            sheet_name: Target sheet name (for new spreadsheets)
+            folder_id: Optional folder ID for new spreadsheets
+
+        Returns:
+            Dictionary with import results and spreadsheet info
+        """
+        import os
+
+        self.logger.info("Importing CSV file: %s", csv_file_path)
+
+        if not os.path.exists(csv_file_path):
+            raise FileNotFoundError(f"CSV file not found: {csv_file_path}")
+
+        if spreadsheet_id:
+            # Import to existing spreadsheet
+            return self._import_csv_to_existing_sheet(csv_file_path, spreadsheet_id, sheet_name)
+        else:
+            # Create new spreadsheet from CSV
+            return self._create_spreadsheet_from_csv(csv_file_path, sheet_name, folder_id)
+
+    def import_csv_data(
+        self, csv_data: str, spreadsheet_id: str, sheet_name: str = "Sheet1", start_range: str = "A1"
+    ) -> Dict[str, Any]:
+        """Import CSV data string to Google Sheets using Sheets API.
+
+        Args:
+            csv_data: CSV content as string
+            spreadsheet_id: Target spreadsheet ID
+            sheet_name: Target sheet name
+            start_range: Starting cell range (e.g., 'A1')
+
+        Returns:
+            Dictionary with import results
+        """
+        import csv
+        import io
+
+        self.logger.info("Importing CSV data to sheet: %s", sheet_name)
+
+        # Parse CSV data
+        csv_reader = csv.reader(io.StringIO(csv_data))
+        rows = list(csv_reader)
+
+        if not rows:
+            raise ValueError("CSV data is empty")
+
+        # Convert to the format expected by Sheets API
+        values = []
+        for row in rows:
+            values.append(row)
+
+        # Determine the range for the data
+        end_col_letter = self._number_to_column_letter(len(values[0]))
+        end_row = len(values)
+        range_name = f"{sheet_name}!{start_range}:{end_col_letter}{end_row}"
+
+        # Clear existing content in the range first
+        self.clear_range(spreadsheet_id, range_name)
+
+        # Import the data
+        result = self.set_values_in_range(spreadsheet_id, range_name, values)
+
+        self.logger.info("CSV data imported successfully: %d rows, %d columns", len(values), len(values[0]))
+
+        return {
+            "spreadsheet_id": spreadsheet_id,
+            "sheet_name": sheet_name,
+            "range": range_name,
+            "rows_imported": len(values),
+            "columns_imported": len(values[0]),
+            "cells_updated": result.get("updatedCells", 0),
+        }
+
+    def _create_spreadsheet_from_csv(
+        self, csv_file_path: str, sheet_name: str, folder_id: Optional[str]
+    ) -> Dict[str, Any]:
+        """Create new spreadsheet from CSV file using Drive API."""
+        import os
+
+        file_name = os.path.basename(csv_file_path)
+        title = os.path.splitext(file_name)[0]
+
+        # Upload CSV file and convert to Google Sheets
+        file_metadata = {
+            "name": title,
+            "mimeType": "application/vnd.google-apps.spreadsheet",
+        }
+
+        if folder_id:
+            file_metadata["parents"] = [folder_id]
+
+        from googleapiclient.http import MediaFileUpload
+
+        media = MediaFileUpload(csv_file_path, mimetype="text/csv")
+
+        file = (
+            self.drive_service.files().create(body=file_metadata, media_body=media, fields="id,name,mimeType").execute()
+        )
+
+        spreadsheet_id = file.get("id")
+
+        self.logger.info("Created new spreadsheet from CSV: %s", spreadsheet_id)
+
+        return {
+            "spreadsheet_id": spreadsheet_id,
+            "name": file.get("name"),
+            "created_from_csv": True,
+            "original_file": csv_file_path,
+        }
+
+    def _import_csv_to_existing_sheet(self, csv_file_path: str, spreadsheet_id: str, sheet_name: str) -> Dict[str, Any]:
+        """Import CSV file to existing spreadsheet sheet."""
+        # Read CSV file
+        with open(csv_file_path, "r", encoding="utf-8") as f:
+            csv_data = f.read()
+
+        # Use the CSV data import method
+        return self.import_csv_data(csv_data, spreadsheet_id, sheet_name)
+
+    def _number_to_column_letter(self, num: int) -> str:
+        """Convert column number to letter (1->A, 2->B, 26->Z, 27->AA)."""
+        letter = ""
+        while num > 0:
+            num -= 1
+            letter = chr(num % 26 + ord("A")) + letter
+            num //= 26
+        return letter
+
+    def clear_range(self, spreadsheet_id: str, range_name: str) -> Dict[str, Any]:
+        """Clear content in a specific range."""
+        self.logger.info("Clearing range: %s", range_name)
+
+        result = (
+            self.service.spreadsheets()
+            .values()
+            .clear(spreadsheetId=spreadsheet_id, range=range_name, body={})
+            .execute()
+        )
+
+        self.logger.info("Range cleared successfully")
+        return result
+
+    def get_range_details(self, spreadsheet_id: str, range_name: str) -> Dict[str, Any]:
+        """Get comprehensive details about a range including formulas, values, formatting, and errors.
+
+        Args:
+            spreadsheet_id: The ID of the spreadsheet
+            range_name: A1 notation range (e.g., 'A1', 'A1:C3', 'Sheet1!B2:D4')
+
+        Returns:
+            Dictionary containing detailed information about each cell in the range
+        """
+        self.logger.info("Getting range details for %s in spreadsheet: %s", range_name, spreadsheet_id)
+
+        # Parse the range to get sheet name and range
+        if "!" in range_name:
+            sheet_name, cell_range = range_name.split("!", 1)
+        else:
+            # Get first sheet if no sheet specified
+            spreadsheet = self.get_spreadsheet(spreadsheet_id)
+            sheet_name = spreadsheet["sheets"][0]["properties"]["title"]
+            cell_range = range_name
+
+        sheet_id = self.get_sheet_id_by_name(spreadsheet_id, sheet_name)
+        if sheet_id is None:
+            raise ValueError(f"Sheet '{sheet_name}' not found")
+
+        # Convert A1 notation to grid coordinates
+        start_row, start_col, end_row, end_col = self._parse_a1_notation(cell_range)
+
+        # Get detailed sheet data including all cell properties
+        fields = (
+            "sheets(properties(title,sheetId),"
+            "data(rowData(values("
+            "formattedValue,userEnteredValue,effectiveValue,effectiveFormat,"
+            "userEnteredFormat,hyperlink,note,textFormatRuns"
+            "))))"
+        )
+
+        spreadsheet = (
+            self.service.spreadsheets()
+            .get(
+                spreadsheetId=spreadsheet_id,
+                ranges=[range_name],
+                fields=fields,
+                includeGridData=True,
+            )
+            .execute()
+        )
+
+        # Process the response to extract detailed cell information
+        result = {
+            "range": range_name,
+            "spreadsheet_id": spreadsheet_id,
+            "sheet_name": sheet_name,
+            "cells": [],
+        }
+
+        if "sheets" in spreadsheet and spreadsheet["sheets"]:
+            sheet = spreadsheet["sheets"][0]
+            if "data" in sheet and sheet["data"]:
+                data = sheet["data"][0]
+                if "rowData" in data:
+                    for row_idx, row_data in enumerate(data["rowData"]):
+                        if "values" in row_data:
+                            for col_idx, cell_data in enumerate(row_data["values"]):
+                                cell_info = self._extract_cell_details(
+                                    cell_data, start_row + row_idx, start_col + col_idx
+                                )
+                                result["cells"].append(cell_info)
+
+        self.logger.info("Retrieved details for %d cells", len(result["cells"]))
+        return result
+
+    def _extract_cell_details(self, cell_data: Dict[str, Any], row: int, col: int) -> Dict[str, Any]:
+        """Extract detailed information from a single cell data object.
+
+        Args:
+            cell_data: Raw cell data from Sheets API
+            row: Zero-based row index
+            col: Zero-based column index
+
+        Returns:
+            Dictionary with comprehensive cell information
+        """
+        # Convert column index to letter (0->A, 1->B, etc.)
+        col_letter = self._number_to_column_letter(col + 1)
+        cell_address = f"{col_letter}{row + 1}"
+
+        cell_info = {
+            "address": cell_address,
+            "row": row + 1,  # 1-based for user display
+            "column": col + 1,  # 1-based for user display
+            "column_letter": col_letter,
+            "type": "empty",
+            "display_value": "",
+            "effective_value": None,
+            "user_entered_value": None,
+            "formula": None,
+            "is_formula": False,
+            "has_error": False,
+            "error_type": None,
+            "error_message": None,
+            "format": {},
+            "hyperlink": None,
+            "note": None,
+        }
+
+        if not cell_data:
+            return cell_info
+
+        # Extract display value (what user sees)
+        if "formattedValue" in cell_data:
+            cell_info["display_value"] = cell_data["formattedValue"]
+            cell_info["type"] = "value"
+
+        # Extract effective value (calculated result)
+        if "effectiveValue" in cell_data:
+            effective = cell_data["effectiveValue"]
+            cell_info["effective_value"] = effective
+
+            # Determine value type
+            if "errorValue" in effective:
+                cell_info["type"] = "error"
+                cell_info["has_error"] = True
+                error = effective["errorValue"]
+                cell_info["error_type"] = error.get("type", "UNKNOWN_ERROR")
+                cell_info["error_message"] = error.get("message", "Unknown error")
+            elif "numberValue" in effective:
+                cell_info["type"] = "number"
+            elif "stringValue" in effective:
+                cell_info["type"] = "string"
+            elif "boolValue" in effective:
+                cell_info["type"] = "boolean"
+
+        # Extract user entered value (raw input)
+        if "userEnteredValue" in cell_data:
+            user_entered = cell_data["userEnteredValue"]
+            cell_info["user_entered_value"] = user_entered
+
+            # Check if it's a formula
+            if "formulaValue" in user_entered:
+                cell_info["formula"] = user_entered["formulaValue"]
+                cell_info["is_formula"] = True
+                cell_info["type"] = "formula"
+
+        # Extract formatting
+        if "effectiveFormat" in cell_data:
+            cell_info["format"] = self._extract_format_details(cell_data["effectiveFormat"])
+
+        # Extract hyperlink
+        if "hyperlink" in cell_data:
+            cell_info["hyperlink"] = cell_data["hyperlink"]
+
+        # Extract note/comment
+        if "note" in cell_data:
+            cell_info["note"] = cell_data["note"]
+
+        return cell_info
+
+    def _extract_format_details(self, format_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract formatting details from effectiveFormat data.
+
+        Args:
+            format_data: effectiveFormat object from Sheets API
+
+        Returns:
+            Dictionary with formatting information
+        """
+        format_info = {}
+
+        # Number format
+        if "numberFormat" in format_data:
+            number_format = format_data["numberFormat"]
+            format_info["number_format"] = {
+                "type": number_format.get("type", "TEXT"),
+                "pattern": number_format.get("pattern", ""),
+            }
+
+        # Text format
+        if "textFormat" in format_data:
+            text_format = format_data["textFormat"]
+            format_info["text_format"] = {
+                "bold": text_format.get("bold", False),
+                "italic": text_format.get("italic", False),
+                "underline": text_format.get("underline", False),
+                "strikethrough": text_format.get("strikethrough", False),
+                "font_family": text_format.get("fontFamily", ""),
+                "font_size": text_format.get("fontSize", 10),
+            }
+
+            # Text color
+            if "foregroundColor" in text_format:
+                color = text_format["foregroundColor"]
+                format_info["text_color"] = {
+                    "red": color.get("red", 0),
+                    "green": color.get("green", 0),
+                    "blue": color.get("blue", 0),
+                    "alpha": color.get("alpha", 1),
+                }
+
+        # Background color
+        if "backgroundColor" in format_data:
+            bg_color = format_data["backgroundColor"]
+            format_info["background_color"] = {
+                "red": bg_color.get("red", 1),
+                "green": bg_color.get("green", 1),
+                "blue": bg_color.get("blue", 1),
+                "alpha": bg_color.get("alpha", 1),
+            }
+
+        # Borders
+        if "borders" in format_data:
+            format_info["borders"] = format_data["borders"]
+
+        # Horizontal alignment
+        if "horizontalAlignment" in format_data:
+            format_info["horizontal_alignment"] = format_data["horizontalAlignment"]
+
+        # Vertical alignment
+        if "verticalAlignment" in format_data:
+            format_info["vertical_alignment"] = format_data["verticalAlignment"]
+
+        return format_info
