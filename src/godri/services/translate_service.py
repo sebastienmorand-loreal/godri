@@ -1,6 +1,7 @@
 """Google Translate service wrapper."""
 
 import logging
+import os
 from typing import Dict, Any, List, Optional
 from google.cloud import translate_v2 as translate
 from .auth_service import AuthService
@@ -13,12 +14,40 @@ class TranslateService:
         self.auth_service = auth_service
         self.logger = logging.getLogger(__name__)
         self.client = None
+        self.project_id = "oa-data-btdpexploration-np"  # Use exploration project
 
     async def initialize(self):
-        """Initialize the Translate service."""
-        await self.auth_service.authenticate()
-        self.client = translate.Client(credentials=self.auth_service.credentials)
-        self.logger.info("Translate service initialized")
+        """Initialize the Translate service using local credentials with quota project."""
+        # Use local credentials with explicit quota project configuration
+        try:
+            import google.auth
+            from google.auth import impersonated_credentials
+            from google.oauth2 import service_account
+
+            # Get default credentials
+            credentials, project = google.auth.default()
+
+            # Create credentials with quota project
+            if hasattr(credentials, "with_quota_project"):
+                credentials_with_quota = credentials.with_quota_project(self.project_id)
+            else:
+                credentials_with_quota = credentials
+
+            # Set the project explicitly for translation billing
+            os.environ["GOOGLE_CLOUD_PROJECT"] = self.project_id
+
+            # Initialize client with credentials that include quota project
+            self.client = translate.Client(credentials=credentials_with_quota)
+            self.logger.info(
+                "Translate service initialized with local credentials and quota project: %s", self.project_id
+            )
+        except Exception as e:
+            self.logger.error("Failed to initialize Translate service with local credentials: %s", str(e))
+            self.logger.info("Attempting fallback to service account credentials...")
+            # Fallback to service account credentials if available
+            await self.auth_service.authenticate()
+            self.client = translate.Client(credentials=self.auth_service.credentials)
+            self.logger.info("Translate service initialized with service account credentials")
 
     def translate_text(self, text: str, target_language: str, source_language: Optional[str] = None) -> Dict[str, Any]:
         """Translate text to target language."""
