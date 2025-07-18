@@ -1111,7 +1111,7 @@ async def translate_text(text: str, target_language: str, source_language: str =
 @mcp.tool(name="speech_to_text")
 async def speech_to_text(
     audio_file_path: str,
-    language_code: str = "en-US",
+    language_code: str = "auto",
     enable_punctuation: bool = True,
     enable_word_timing: bool = False,
     use_long_running: bool = False,
@@ -1120,14 +1120,16 @@ async def speech_to_text(
 
     Args:
         audio_file_path: Path to audio file (MP3, WAV, OPUS, FLAC)
-        language_code: Language code (e.g., 'en-US', 'fr-FR', 'es-ES')
+        language_code: Language code or shortcut (e.g., 'en', 'fr', 'french', 'en-US', 'fr-FR', 'es-ES'). Use 'auto' for automatic detection.
         enable_punctuation: Add automatic punctuation to transcription
         enable_word_timing: Include word timing information in response
         use_long_running: Force long-running transcription for large files
 
     Examples:
         Basic transcription: audio_file_path="recording.mp3"
-        French audio: audio_file_path="french.wav", language_code="fr-FR"
+        French audio: audio_file_path="french.wav", language_code="fr"
+        Spanish audio: audio_file_path="spanish.mp3", language_code="spanish"
+        Full code: audio_file_path="recording.opus", language_code="fr-FR"
         With timing: audio_file_path="meeting.opus", enable_word_timing=True
         Long audio: audio_file_path="lecture.mp3", use_long_running=True
 
@@ -1149,11 +1151,11 @@ async def speech_to_text(
         # Choose transcription method
         if use_long_running or properties["recommended_method"] == "long":
             result = speech_service.transcribe_audio_long(
-                audio_file_path, language_code, enable_punctuation, enable_word_timing
+                audio_file_path, language_code, enable_punctuation, enable_word_timing, None, properties
             )
         else:
             result = speech_service.transcribe_audio_file(
-                audio_file_path, language_code, enable_punctuation, enable_word_timing
+                audio_file_path, language_code, enable_punctuation, enable_word_timing, None, properties
             )
 
         # Format response

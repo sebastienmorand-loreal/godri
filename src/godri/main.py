@@ -207,6 +207,7 @@ class GodriCLI:
                     getattr(args, "punctuation", True),
                     getattr(args, "word_timing", False),
                     getattr(args, "sample_rate", None),
+                    properties,
                 )
             else:
                 result = self.speech_service.transcribe_audio_file(
@@ -215,6 +216,7 @@ class GodriCLI:
                     getattr(args, "punctuation", True),
                     getattr(args, "word_timing", False),
                     getattr(args, "sample_rate", None),
+                    properties,
                 )
 
             print(f"Speech-to-Text Transcription:")
@@ -1524,7 +1526,10 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
         speech_parser = subparsers.add_parser("speech", help="Speech-to-text transcription")
         speech_parser.add_argument("audio_file", help="Path to audio file (MP3, WAV, OPUS)")
         speech_parser.add_argument(
-            "--language", "-l", default="en-US", help="Language code (e.g., 'en-US', 'fr-FR', 'es-ES')"
+            "--language",
+            "-l",
+            default="en-US",
+            help="Language code or shortcut (e.g., 'en', 'fr', 'french', 'en-US', 'fr-FR')",
         )
         speech_parser.add_argument(
             "--no-punctuation", dest="punctuation", action="store_false", help="Disable automatic punctuation"
