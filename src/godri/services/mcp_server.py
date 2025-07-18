@@ -443,6 +443,38 @@ async def sheets_translate(
         return "No content was translated in the specified range"
 
 
+@mcp.tool(name="sheets_values_copy")
+async def sheets_values_copy(
+    spreadsheet_id: str, source_range: str, destination_range: str, copy_type: str = "all"
+) -> str:
+    """Copy values, formulas, formats, or all between ranges in Google Sheets.
+
+    Args:
+        spreadsheet_id: The ID of the spreadsheet
+        source_range: Source range in A1 notation (e.g., 'A1:C3', 'Sheet1!A1:C3')
+        destination_range: Destination range in A1 notation (e.g., 'E1:G3', 'Sheet2!E1:G3')
+        copy_type: What to copy - 'values', 'formulas', 'formats', 'all' (default: 'all')
+
+    Examples:
+        Copy all: copy_type='all' (copies values, formulas, and formatting)
+        Values only: copy_type='values' (copies only the calculated values)
+        Formulas only: copy_type='formulas' (copies formulas, maintains references)
+        Formats only: copy_type='formats' (copies only formatting, no content)
+
+    Returns:
+        Success message with copy operation details
+    """
+    await initialize_services()
+
+    try:
+        result = sheets_service.copy_range_values(spreadsheet_id, source_range, destination_range, copy_type)
+
+        return f"✅ Range '{source_range}' copied to '{destination_range}' successfully\nCopy type: {result['copy_type']} (paste type: {result['paste_type']})"
+
+    except Exception as e:
+        return f"❌ Error copying range: {str(e)}"
+
+
 # Slides tools
 @mcp.tool(name="slides_createdocument")
 async def slides_createdocument(title: str, folder_id: str = "", theme: str = "STREAMLINE") -> str:

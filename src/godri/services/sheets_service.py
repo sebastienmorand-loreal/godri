@@ -1244,6 +1244,142 @@ class SheetsService:
             "preserve_formatting": preserve_formatting,
         }
 
+    # Copy and Paste Operations
+    def copy_range_values(
+        self,
+        spreadsheet_id: str,
+        source_range: str,
+        destination_range: str,
+        copy_type: str = "all",
+        paste_type: str = "PASTE_NORMAL",
+    ) -> Dict[str, Any]:
+        """Copy values from source range to destination range using Google Sheets API.
+
+        Args:
+            spreadsheet_id: The ID of the spreadsheet
+            source_range: Source range in A1 notation (e.g., 'A1:C3', 'Sheet1!A1:C3')
+            destination_range: Destination range in A1 notation (e.g., 'E1:G3', 'Sheet2!E1:G3')
+            copy_type: What to copy - 'values', 'formulas', 'formats', 'all' (default: 'all')
+            paste_type: Paste operation type (default: 'PASTE_NORMAL')
+
+        Returns:
+            Dictionary with operation results
+
+        Raises:
+            ValueError: If copy_type is invalid
+        """
+        self.logger.info(
+            "Copying %s from range %s to %s in spreadsheet: %s",
+            copy_type,
+            source_range,
+            destination_range,
+            spreadsheet_id,
+        )
+
+        # Validate copy_type
+        valid_copy_types = ["values", "formulas", "formats", "all"]
+        if copy_type not in valid_copy_types:
+            raise ValueError(f"Invalid copy_type '{copy_type}'. Must be one of: {valid_copy_types}")
+
+        # Map copy_type to paste_type
+        paste_type_mapping = {
+            "values": "PASTE_VALUES",
+            "formulas": "PASTE_FORMULA",
+            "formats": "PASTE_FORMAT",
+            "all": "PASTE_NORMAL",
+        }
+
+        actual_paste_type = paste_type_mapping.get(copy_type, paste_type)
+
+        # Use copyPaste request in batchUpdate
+        body = {
+            "requests": [
+                {
+                    "copyPaste": {
+                        "source": {"sheetId": self._get_sheet_id_from_range(spreadsheet_id, source_range)},
+                        "destination": {"sheetId": self._get_sheet_id_from_range(spreadsheet_id, destination_range)},
+                        "pasteType": actual_paste_type,
+                    }
+                }
+            ]
+        }
+
+        # Add range specifications if needed
+        source_grid_range = self._convert_a1_to_grid_range(spreadsheet_id, source_range)
+        destination_grid_range = self._convert_a1_to_grid_range(spreadsheet_id, destination_range)
+
+        body["requests"][0]["copyPaste"]["source"].update(source_grid_range)
+        body["requests"][0]["copyPaste"]["destination"].update(destination_grid_range)
+
+        result = self.service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body=body).execute()
+
+        self.logger.info("Range copied successfully from %s to %s", source_range, destination_range)
+
+        return {
+            "spreadsheet_id": spreadsheet_id,
+            "source_range": source_range,
+            "destination_range": destination_range,
+            "copy_type": copy_type,
+            "paste_type": actual_paste_type,
+            "replies": result.get("replies", []),
+        }
+
+    def _get_sheet_id_from_range(self, spreadsheet_id: str, range_name: str) -> int:
+        """Extract sheet ID from a range string."""
+        if "!" in range_name:
+            sheet_name = range_name.split("!")[0]
+            return self.get_sheet_id_by_name(spreadsheet_id, sheet_name)
+        else:
+            # Default to first sheet if no sheet specified
+            spreadsheet = self.service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            return spreadsheet["sheets"][0]["properties"]["sheetId"]
+
+    def _convert_a1_to_grid_range(self, spreadsheet_id: str, range_name: str) -> Dict[str, Any]:
+        """Convert A1 notation to GridRange format for API requests."""
+        import re
+
+        # Extract sheet name and range parts
+        if "!" in range_name:
+            sheet_name, cell_range = range_name.split("!", 1)
+        else:
+            cell_range = range_name
+
+        # Parse cell range (e.g., 'A1:C3' or 'A1')
+        if ":" in cell_range:
+            start_cell, end_cell = cell_range.split(":")
+        else:
+            start_cell = end_cell = cell_range
+
+        def parse_cell(cell: str) -> Dict[str, int]:
+            """Parse cell reference like 'A1' into row/column indices."""
+            match = re.match(r"([A-Z]+)(\d+)", cell.upper())
+            if not match:
+                raise ValueError(f"Invalid cell reference: {cell}")
+
+            col_letters, row_num = match.groups()
+
+            # Convert column letters to 0-based index
+            col_index = 0
+            for char in col_letters:
+                col_index = col_index * 26 + (ord(char) - ord("A") + 1)
+            col_index -= 1  # Convert to 0-based
+
+            row_index = int(row_num) - 1  # Convert to 0-based
+
+            return {"row": row_index, "col": col_index}
+
+        start_indices = parse_cell(start_cell)
+        end_indices = parse_cell(end_cell)
+
+        grid_range = {
+            "startRowIndex": start_indices["row"],
+            "endRowIndex": end_indices["row"] + 1,  # End is exclusive
+            "startColumnIndex": start_indices["col"],
+            "endColumnIndex": end_indices["col"] + 1,  # End is exclusive
+        }
+
+        return grid_range
+
     # CSV Import Operations
     def import_csv_file(
         self,

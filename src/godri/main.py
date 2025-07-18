@@ -314,6 +314,19 @@ class GodriCLI:
             self.logger.error("Failed to format cells: %s", str(e))
             sys.exit(1)
 
+    async def handle_copy_values(self, args):
+        """Handle copying values between ranges in Google Sheet."""
+        try:
+            copy_type = getattr(args, "copy_type", "all")
+            result = self.sheets_service.copy_range_values(
+                args.spreadsheet_id, args.source_range, args.destination_range, copy_type
+            )
+            print(f"Range '{args.source_range}' copied to '{args.destination_range}' successfully")
+            print(f"Copy type: {result['copy_type']} (paste type: {result['paste_type']})")
+        except Exception as e:
+            self.logger.error("Failed to copy values: %s", str(e))
+            sys.exit(1)
+
     async def handle_list_sheets(self, args):
         """Handle listing sheets in Google Spreadsheet."""
         try:
@@ -573,6 +586,8 @@ class GodriCLI:
             await self.handle_read_sheet(args)
         elif args.values_action == "format":
             await self.handle_format_cells(args)
+        elif args.values_action == "copy":
+            await self.handle_copy_values(args)
 
     async def handle_sheet_columns(self, args):
         """Handle sheet columns subcommands."""
@@ -1206,6 +1221,18 @@ Background: '{"backgroundColor":{"red":1.0,"green":0.8,"blue":0.8}}'
 Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"foregroundColor":{"red":0.2,"green":0.2,"blue":0.8}},"backgroundColor":{"red":0.9,"green":0.9,"blue":1.0}}'""",
         )
         format_group.add_argument("--from", dest="source_range", help="Copy formatting from this range")
+
+        # sheets values copy
+        values_copy_parser = values_subparsers.add_parser("copy", help="Copy values/formulas/formats between ranges")
+        values_copy_parser.add_argument("spreadsheet_id", help="Spreadsheet ID")
+        values_copy_parser.add_argument("source_range", help="Source range (e.g., 'A1:C3', 'Sheet1!A1:C3')")
+        values_copy_parser.add_argument("destination_range", help="Destination range (e.g., 'E1:G3', 'Sheet2!E1:G3')")
+        values_copy_parser.add_argument(
+            "--copy-type",
+            choices=["values", "formulas", "formats", "all"],
+            default="all",
+            help="What to copy: values only, formulas only, formats only, or all (default: all)",
+        )
 
         # sheets columns
         sheets_columns_parser = sheets_subparsers.add_parser("columns", help="Column operations")
