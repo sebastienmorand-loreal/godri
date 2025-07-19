@@ -7,7 +7,7 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 
 # Global services - will be initialized on first use
-from ..services.auth_service_new import AuthService
+from ..services.auth_service import AuthService
 from ..commons.api.google_api_client import GoogleApiClient
 from ..commons.api.drive_api import DriveApiClient
 from ..commons.api.docs_api import DocsApiClient
