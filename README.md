@@ -8,8 +8,9 @@ A comprehensive Python CLI tool for Google Drive and Google Workspace operations
 - **Google Docs**: Create, read, and update documents with markdown support
 - **Google Sheets**: Comprehensive spreadsheet operations (create, manage sheets, read/write values, formulas, formatting, rows/columns)
 - **Google Slides**: Comprehensive presentation operations (create, themes, layouts, slides, content management)
+- **Google Forms**: Complete form management (read/write forms, sections, questions, translation with 1-based numbering)
 - **Translation**: Translate text using Google Translate API
-- **MCP Server**: Model Context Protocol integration with 13+ sheets tools and structured data support
+- **MCP Server**: Model Context Protocol integration with 25+ tools including complete Forms support
 - **Authentication**: Secure OAuth2 flow with persistent tokens
 
 ## Installation
@@ -34,6 +35,7 @@ uv run pip install -e .
    - Google Docs API  
    - Google Sheets API
    - Google Slides API
+   - **Google Forms API** (required for form management)
    - **Google Cloud Translation API** (required for translation features)
 4. Create credentials (OAuth 2.0 Client ID) for a desktop application
 5. Download the client secret JSON file
@@ -491,6 +493,78 @@ godri slides copy "SOURCE_PRESENTATION_ID" "TARGET_PRESENTATION_ID" "1,2" --posi
 - `"2-4,6-8"` - Slides 2-4 and slides 6-8
 - `"1,3-5,7"` - Slide 1, slides 3-5, and slide 7
 
+### Google Forms Operations
+
+**IMPORTANT: All section and question numbers use 1-based indexing (start from 1, not 0).**
+
+#### Read Operations
+```bash
+# Get complete form structure
+godri forms read form "FORM_ID"
+
+# List all sections with question counts
+godri forms read sections "FORM_ID"
+
+# Get all questions from the form
+godri forms read questions "FORM_ID"
+
+# Get specific question by number (1-based)
+godri forms read question "FORM_ID" 5
+
+# Get all questions from specific section (1-based)
+godri forms read section-questions "FORM_ID" 3
+```
+
+#### Write Operations
+```bash
+# Add new section
+godri forms write add-section "FORM_ID" "Training Questions" --description "Questions about training" --position end
+
+# Add new question to section (1-based)
+godri forms write add-question "FORM_ID" "What is your experience level?" --type choice --section-index 2 --required --options "Beginner,Intermediate,Advanced"
+
+# Add text question
+godri forms write add-question "FORM_ID" "Please describe your background" --type text --section-index 1
+
+# Update existing question (1-based question number)
+godri forms write update-question "FORM_ID" 5 --title "Updated question title" --required
+
+# Update section (1-based section number)
+godri forms write update-section "FORM_ID" 2 --title "New Section Title" --description "Updated description"
+
+# Remove question (1-based question number)
+godri forms write remove-question "FORM_ID" 8
+
+# Remove section (1-based section number) - removes all questions in section
+godri forms write remove-section "FORM_ID" 3
+```
+
+#### Translation Operations
+```bash
+# Translate question and its options (1-based question number)
+godri forms translate question "FORM_ID" 5 "fr" --translate-answers
+
+# Translate without translating answer options
+godri forms translate question "FORM_ID" 3 "es" --no-translate-answers
+
+# Translate with specific source language
+godri forms translate question "FORM_ID" 2 "de" --source-language "en"
+```
+
+**Forms Features:**
+- **Complete CRUD Operations**: Read, create, update, delete forms, sections, and questions
+- **1-Based Numbering**: User-friendly numbering for sections and questions (Training = Section 7, not 6)
+- **Section Management**: Add, update, remove sections with positioning control
+- **Question Types**: Support for text, choice, scale, date, time, and file upload questions
+- **Translation Support**: Translate questions and answer options while preserving structure
+- **Positioning Control**: Insert sections and questions at specific positions (before/after/end)
+- **Data Validation**: Required/optional question settings and proper form validation
+
+**Numbering Examples:**
+- Section 1 = Default Section, Section 7 = Training (user-facing numbers)
+- Question 1 = First question, Question 20 = "Are you trained in IP?" (user-facing numbers)
+- All CLI and MCP tools automatically convert to internal 0-based indexing
+
 ### Translation
 
 ```bash
@@ -620,6 +694,20 @@ godri mcp --transport http --host localhost --port 8000
 - `slides_add(presentation_id, layout, position)` - Add slides
 - `slides_content_add(presentation_id, slide_id, content_type, content, x, y, width, height)` - Add content
 
+**Forms Tools (1-based numbering):**
+- `forms_get_form(form_id)` - Get complete form structure with metadata
+- `forms_get_sections(form_id)` - List all sections with question counts and navigation
+- `forms_get_questions(form_id)` - Get all questions organized by sections
+- `forms_get_question(form_id, question_number)` - Get specific question details (1-based)
+- `forms_get_section_questions(form_id, section_index)` - Get questions from specific section (1-based)
+- `forms_add_section(form_id, title, description, position, reference_question)` - Add new section
+- `forms_add_question(form_id, title, question_type, description, required, section_index, position, reference_question, options)` - Add new question (1-based section)
+- `forms_update_question(form_id, question_number, title, description, question_type, required, options)` - Update question (1-based)
+- `forms_update_section(form_id, section_index, title, description, go_to_action, go_to_section_id)` - Update section (1-based)
+- `forms_remove_question(form_id, question_number)` - Remove question (1-based)
+- `forms_remove_section(form_id, section_index)` - Remove section and all questions (1-based)
+- `forms_translate_question(form_id, question_number, target_language, translate_answers, source_language)` - Translate question (1-based)
+
 **Translation Tools:**
 - `translate_text(text, target_language, source_language)` - Translate text
 
@@ -642,7 +730,9 @@ godri/
 │       ├── docs_service.py     # Google Docs with markdown support
 │       ├── sheets_service.py   # Google Sheets comprehensive operations
 │       ├── slides_service.py   # Google Slides comprehensive operations
-│       └── translate_service.py # Translation service
+│       ├── forms_service.py    # Google Forms comprehensive operations
+│       ├── translate_service.py # Translation service
+│       └── mcp_server.py       # MCP server implementation
 ├── pyproject.toml              # UV dependency configuration
 └── README.md
 ```

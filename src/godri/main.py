@@ -21,6 +21,7 @@ from godri.services.sheets_service import SheetsService
 from godri.services.slides_service import SlidesService
 from godri.services.translate_service import TranslateService
 from godri.services.speech_service import SpeechService
+from godri.services.forms_service import FormsService
 from godri.services.mcp_server import mcp
 
 
@@ -36,6 +37,7 @@ class GodriCLI:
         self.slides_service = None
         self.translate_service = None
         self.speech_service = None
+        self.forms_service = None
 
     async def initialize_services(self):
         """Initialize all services."""
@@ -46,6 +48,7 @@ class GodriCLI:
         self.slides_service = SlidesService(self.auth_service)
         self.translate_service = TranslateService(self.auth_service)
         self.speech_service = SpeechService(self.auth_service)
+        self.forms_service = FormsService(self.auth_service, self.translate_service)
 
         await self.drive_service.initialize()
         await self.docs_service.initialize()
@@ -53,6 +56,7 @@ class GodriCLI:
         await self.slides_service.initialize()
         await self.translate_service.initialize()
         await self.speech_service.initialize()
+        await self.forms_service.initialize()
 
     async def handle_auth(self, args):
         """Handle authentication command."""
@@ -242,6 +246,166 @@ class GodriCLI:
         except Exception as e:
             self.logger.error("Speech transcription failed: %s", str(e))
             sys.exit(1)
+
+    async def handle_forms(self, args):
+        """Handle forms commands."""
+        try:
+            if args.forms_command == "read":
+                await self.handle_forms_read(args)
+            elif args.forms_command == "write":
+                await self.handle_forms_write(args)
+            elif args.forms_command == "translate":
+                await self.handle_forms_translate(args)
+            else:
+                print(f"Unknown forms command: {args.forms_command}")
+                sys.exit(1)
+        except Exception as e:
+            self.logger.error("Forms operation failed: %s", str(e))
+            sys.exit(1)
+
+    async def handle_forms_read(self, args):
+        """Handle forms read commands."""
+        if args.forms_read_command == "form":
+            form = self.forms_service.get_form(args.form_id)
+            print("Form Structure:")
+            print(f"  Title: {form.get('title', 'Untitled')}")
+            print(f"  Description: {form.get('description', 'No description')}")
+            print(f"  Items: {len(form.get('items', []))}")
+
+        elif args.forms_read_command == "questions":
+            questions = self.forms_service.get_questions(args.form_id)
+            actual_questions = [q for q in questions if not q.get("is_section_break")]
+            print(f"Questions ({len(actual_questions)} total):")
+            for question in actual_questions:
+                print(f"  {question['question_number']}. {question['title']}")
+                if question.get("description"):
+                    print(f"     Description: {question['description']}")
+                print(f"     Type: {question['question_type']}")
+                print(f"     Required: {question['required']}")
+                if question.get("choices"):
+                    print(f"     Options: {[c['value'] for c in question['choices']]}")
+                print()
+
+        elif args.forms_read_command == "question":
+            question = self.forms_service.get_question(args.form_id, args.question_number)
+            if question:
+                print(f"Question {question['question_number']}:")
+                print(f"  Title: {question['title']}")
+                print(f"  Description: {question.get('description', 'No description')}")
+                print(f"  Type: {question['question_type']}")
+                print(f"  Required: {question['required']}")
+                if question.get("choices"):
+                    print(f"  Options:")
+                    for i, choice in enumerate(question["choices"]):
+                        print(f"    {i+1}. {choice['value']}")
+                if question.get("choice_navigation"):
+                    print(f"  Navigation options: {question['choice_navigation']}")
+                print(f"  Section: {question['section']['title']} (index {question['section']['index']})")
+            else:
+                print(f"Question {args.question_number} not found")
+
+        elif args.forms_read_command == "sections":
+            sections = self.forms_service.get_sections(args.form_id)
+            print(f"Sections ({len(sections)} total):")
+            for section in sections:
+                print(f"  {section['index']}. {section['title']}")
+                print(f"     Description: {section.get('description', 'No description')}")
+                print(f"     Questions: {section['question_count']}")
+                if section.get("go_to_action"):
+                    print(f"     Navigation: {section['go_to_action']}")
+                    if section.get("go_to_section_id"):
+                        print(f"     Target Section: {section['go_to_section_id']}")
+                print()
+
+        elif args.forms_read_command == "section-questions":
+            questions = self.forms_service.get_section_questions(args.form_id, args.section_index)
+            print(f"Section {args.section_index} Questions ({len(questions)} total):")
+            for question in questions:
+                print(f"  {question['question_number']}. {question['title']}")
+                print(f"     Type: {question['question_type']}")
+                print(f"     Required: {question['required']}")
+
+    async def handle_forms_write(self, args):
+        """Handle forms write commands."""
+        if args.forms_write_command == "add-section":
+            response = self.forms_service.add_section(
+                args.form_id, args.title, args.description or "", args.position, args.reference_question
+            )
+            print(f"Section '{args.title}' added successfully")
+
+        elif args.forms_write_command == "add-question":
+            question_data = {
+                "title": args.title,
+                "description": args.description or "",
+                "question_type": args.type,
+                "required": args.required,
+            }
+            if args.options:
+                question_data["options"] = args.options
+
+            response = self.forms_service.add_question(
+                args.form_id, question_data, args.section_index, args.position, args.reference_question
+            )
+            print(f"Question '{args.title}' added successfully")
+
+        elif args.forms_write_command == "update-question":
+            question_data = {}
+            if args.title:
+                question_data["title"] = args.title
+            if args.description:
+                question_data["description"] = args.description
+            if args.type:
+                question_data["question_type"] = args.type
+            if hasattr(args, "required") and args.required is not None:
+                question_data["required"] = args.required
+            if args.options:
+                question_data["options"] = args.options
+
+            response = self.forms_service.update_question(args.form_id, args.question_number, question_data)
+            print(f"Question {args.question_number} updated successfully")
+
+        elif args.forms_write_command == "update-section":
+            kwargs = {}
+            if args.title:
+                kwargs["title"] = args.title
+            if args.description:
+                kwargs["description"] = args.description
+            if args.go_to_action:
+                kwargs["go_to_action"] = args.go_to_action
+            if args.go_to_section_id:
+                kwargs["go_to_section_id"] = args.go_to_section_id
+
+            response = self.forms_service.update_section(args.form_id, args.section_index, **kwargs)
+            print(f"Section {args.section_index} updated successfully")
+
+        elif args.forms_write_command == "remove-question":
+            response = self.forms_service.remove_question(args.form_id, args.question_number)
+            print(f"Question {args.question_number} removed successfully")
+
+        elif args.forms_write_command == "remove-section":
+            response = self.forms_service.remove_section(args.form_id, args.section_index)
+            print(f"Section {args.section_index} removed successfully")
+
+    async def handle_forms_translate(self, args):
+        """Handle forms translate commands."""
+        result = await self.forms_service.translate_question(
+            args.form_id, args.question_number, args.target_language, args.translate_answers, args.source_language or ""
+        )
+
+        print(f"Question {args.question_number} translated successfully:")
+        print(
+            f"  Title: '{result['translations']['title']['original']}' -> '{result['translations']['title']['translated']}'"
+        )
+
+        if result["translations"]["description"]:
+            print(
+                f"  Description: '{result['translations']['description']['original']}' -> '{result['translations']['description']['translated']}'"
+            )
+
+        if result["translations"]["options"]:
+            print("  Options:")
+            for opt in result["translations"]["options"]:
+                print(f"    '{opt['original']}' -> '{opt['translated']}'")
 
     async def handle_read_doc(self, args):
         """Handle reading Google Doc content."""
@@ -1542,6 +1706,115 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
             "--force-short", action="store_true", help="Force short-form transcription even for large files"
         )
 
+        # FORMS command
+        forms_parser = subparsers.add_parser("forms", help="Google Forms operations")
+        forms_subparsers = forms_parser.add_subparsers(dest="forms_command", help="Forms commands")
+
+        # Forms read operations
+        forms_read_parser = forms_subparsers.add_parser("read", help="Read form operations")
+        forms_read_subparsers = forms_read_parser.add_subparsers(dest="forms_read_command", help="Read commands")
+
+        # Get form structure
+        form_get_parser = forms_read_subparsers.add_parser("form", help="Get complete form structure")
+        form_get_parser.add_argument("form_id", help="Google Form ID")
+
+        # Get questions
+        questions_get_parser = forms_read_subparsers.add_parser("questions", help="Get all questions")
+        questions_get_parser.add_argument("form_id", help="Google Form ID")
+
+        # Get specific question
+        question_get_parser = forms_read_subparsers.add_parser("question", help="Get specific question")
+        question_get_parser.add_argument("form_id", help="Google Form ID")
+        question_get_parser.add_argument("question_number", type=int, help="Question number (1-based)")
+
+        # Get sections
+        sections_get_parser = forms_read_subparsers.add_parser("sections", help="Get all sections")
+        sections_get_parser.add_argument("form_id", help="Google Form ID")
+
+        # Get section questions
+        section_questions_parser = forms_read_subparsers.add_parser(
+            "section-questions", help="Get questions from section"
+        )
+        section_questions_parser.add_argument("form_id", help="Google Form ID")
+        section_questions_parser.add_argument("section_index", type=int, help="Section number (1-based)")
+
+        # Forms write operations
+        forms_write_parser = forms_subparsers.add_parser("write", help="Write form operations")
+        forms_write_subparsers = forms_write_parser.add_subparsers(dest="forms_write_command", help="Write commands")
+
+        # Add section
+        section_add_parser = forms_write_subparsers.add_parser("add-section", help="Add a section")
+        section_add_parser.add_argument("form_id", help="Google Form ID")
+        section_add_parser.add_argument("title", help="Section title")
+        section_add_parser.add_argument("--description", help="Section description")
+        section_add_parser.add_argument(
+            "--position", choices=["before", "after", "end"], default="end", help="Position"
+        )
+        section_add_parser.add_argument("--reference-question", type=int, help="Reference question number")
+
+        # Add question
+        question_add_parser = forms_write_subparsers.add_parser("add-question", help="Add a question")
+        question_add_parser.add_argument("form_id", help="Google Form ID")
+        question_add_parser.add_argument("title", help="Question title")
+        question_add_parser.add_argument("--description", help="Question description")
+        question_add_parser.add_argument(
+            "--type",
+            choices=["text", "choice", "scale", "date", "time", "file_upload"],
+            default="text",
+            help="Question type",
+        )
+        question_add_parser.add_argument("--required", action="store_true", help="Make question required")
+        question_add_parser.add_argument("--section-index", type=int, default=1, help="Target section number (1-based)")
+        question_add_parser.add_argument(
+            "--position", choices=["before", "after", "end"], default="end", help="Position"
+        )
+        question_add_parser.add_argument("--reference-question", type=int, help="Reference question number")
+        question_add_parser.add_argument("--options", nargs="+", help="Choice options (for choice questions)")
+
+        # Update question
+        question_update_parser = forms_write_subparsers.add_parser("update-question", help="Update a question")
+        question_update_parser.add_argument("form_id", help="Google Form ID")
+        question_update_parser.add_argument("question_number", type=int, help="Question number to update")
+        question_update_parser.add_argument("--title", help="New question title")
+        question_update_parser.add_argument("--description", help="New question description")
+        question_update_parser.add_argument(
+            "--type", choices=["text", "choice", "scale", "date", "time", "file_upload"], help="Question type"
+        )
+        question_update_parser.add_argument("--required", action="store_true", help="Make question required")
+        question_update_parser.add_argument(
+            "--not-required", dest="required", action="store_false", help="Make question not required"
+        )
+        question_update_parser.add_argument("--options", nargs="+", help="Choice options (for choice questions)")
+
+        # Update section
+        section_update_parser = forms_write_subparsers.add_parser("update-section", help="Update a section")
+        section_update_parser.add_argument("form_id", help="Google Form ID")
+        section_update_parser.add_argument("section_index", type=int, help="Section number to update (1-based)")
+        section_update_parser.add_argument("--title", help="New section title")
+        section_update_parser.add_argument("--description", help="New section description")
+        section_update_parser.add_argument("--go-to-action", help="Navigation action")
+        section_update_parser.add_argument("--go-to-section-id", help="Target section ID")
+
+        # Remove question
+        question_remove_parser = forms_write_subparsers.add_parser("remove-question", help="Remove a question")
+        question_remove_parser.add_argument("form_id", help="Google Form ID")
+        question_remove_parser.add_argument("question_number", type=int, help="Question number to remove")
+
+        # Remove section
+        section_remove_parser = forms_write_subparsers.add_parser("remove-section", help="Remove a section")
+        section_remove_parser.add_argument("form_id", help="Google Form ID")
+        section_remove_parser.add_argument("section_index", type=int, help="Section number to remove (1-based)")
+
+        # Forms translate operations
+        forms_translate_parser = forms_subparsers.add_parser("translate", help="Translate form content")
+        forms_translate_parser.add_argument("form_id", help="Google Form ID")
+        forms_translate_parser.add_argument("question_number", type=int, help="Question number to translate")
+        forms_translate_parser.add_argument("target_language", help="Target language code")
+        forms_translate_parser.add_argument("--source-language", help="Source language code")
+        forms_translate_parser.add_argument(
+            "--no-answers", dest="translate_answers", action="store_false", help="Don't translate answer options"
+        )
+
         # MCP command
         mcp_parser = subparsers.add_parser("mcp", help="Run MCP server")
         mcp_parser.add_argument("transport", choices=["stdio", "http"], help="Transport type (stdio or http)")
@@ -1578,6 +1851,7 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
             "slides": self.handle_slides,
             "translate": self.handle_translate,
             "speech": self.handle_speech,
+            "forms": self.handle_forms,
             "mcp": self.handle_mcp,
         }
 

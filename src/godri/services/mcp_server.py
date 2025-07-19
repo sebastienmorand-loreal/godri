@@ -1,6 +1,7 @@
 """MCP Server implementation for Godri."""
 
 import asyncio
+import json
 import logging
 from typing import List, Optional
 import os
@@ -12,6 +13,7 @@ from .sheets_service import SheetsService
 from .slides_service import SlidesService
 from .translate_service import TranslateService
 from .speech_service import SpeechService
+from .forms_service import FormsService
 
 # Initialize FastMCP server
 mcp = FastMCP("Godri")
@@ -24,6 +26,7 @@ sheets_service: Optional[SheetsService] = None
 slides_service: Optional[SlidesService] = None
 translate_service: Optional[TranslateService] = None
 speech_service: Optional[SpeechService] = None
+forms_service: Optional[FormsService] = None
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +79,7 @@ def _convert_color_to_rgb(color: str) -> dict:
 
 async def initialize_services():
     """Initialize all Google services."""
-    global auth_service, drive_service, docs_service, sheets_service, slides_service, translate_service, speech_service
+    global auth_service, drive_service, docs_service, sheets_service, slides_service, translate_service, speech_service, forms_service
 
     if auth_service is not None:
         return  # Already initialized
@@ -98,6 +101,7 @@ async def initialize_services():
     slides_service = SlidesService(auth_service)
     translate_service = TranslateService(auth_service)
     speech_service = SpeechService(auth_service)
+    forms_service = FormsService(auth_service, translate_service)
 
     await drive_service.initialize()
     await docs_service.initialize()
@@ -105,6 +109,7 @@ async def initialize_services():
     await slides_service.initialize()
     await translate_service.initialize()
     await speech_service.initialize()
+    await forms_service.initialize()
 
     logger.info("All services initialized for MCP server")
 
@@ -1192,3 +1197,565 @@ async def speech_to_text(
 
     except Exception as e:
         return f"❌ Error during speech transcription: {str(e)}"
+
+
+# Forms tools
+@mcp.tool(name="forms_get_form")
+async def forms_get_form(form_id: str) -> str:
+    """Get complete Google Form structure including questions and sections.
+
+    Args:
+        form_id: Google Form ID
+
+    Returns:
+        JSON-formatted form structure with metadata
+    """
+    await initialize_services()
+
+    try:
+        form = forms_service.get_form(form_id)
+
+        output = {
+            "form_id": form.get("form_id"),
+            "title": form.get("title", "Untitled"),
+            "description": form.get("description", ""),
+            "document_title": form.get("document_title", ""),
+            "total_items": len(form.get("items", [])),
+            "responder_uri": form.get("responderUri"),
+            "linked_sheet_id": form.get("linkedSheetId"),
+            "revision_id": form.get("revisionId"),
+            "settings": form.get("settings", {}),
+        }
+
+        return f"✅ Form structure retrieved successfully\n\n{json.dumps(output, ensure_ascii=False, indent=2)}"
+
+    except Exception as e:
+        return f"❌ Error retrieving form: {str(e)}"
+
+
+@mcp.tool(name="forms_get_questions")
+async def forms_get_questions(form_id: str, section_filter: Optional[int] = None) -> str:
+    """Get all questions from a Google Form organized by sections.
+
+    Args:
+        form_id: Google Form ID
+        section_filter: Optional section number (1-based) to filter questions.
+                       If provided, only questions from that section are returned.
+                       If None, all questions are returned.
+
+    Returns:
+        JSON-formatted list of questions with section information
+    """
+    await initialize_services()
+
+    try:
+        # Use service-level filtering
+        questions = forms_service.get_questions(form_id, section_filter)
+        actual_questions = [q for q in questions if not q.get("is_section_break")]
+        sections = [q for q in questions if q.get("is_section_break")]
+
+        output = {
+            "form_id": form_id,
+            "section_filter": section_filter,
+            "total_questions": len(actual_questions),
+            "total_sections": len(sections),
+            "questions": [],
+        }
+
+        for question in actual_questions:
+            question_data = {
+                "question_number": question["question_number"],
+                "title": question["title"],
+                "description": question.get("description", ""),
+                "type": question["question_type"],
+                "required": question["required"],
+                "section": {"title": question["section"]["title"], "index": question["section"]["index"]},
+            }
+
+            if question.get("choices"):
+                question_data["options"] = [choice["value"] for choice in question["choices"]]
+
+            if question.get("choice_navigation"):
+                question_data["navigation_options"] = question["choice_navigation"]
+
+            output["questions"].append(question_data)
+
+        filter_msg = f" from section {section_filter}" if section_filter else ""
+        return f"✅ Questions{filter_msg} retrieved successfully\n\n{json.dumps(output, ensure_ascii=False, indent=2)}"
+
+    except Exception as e:
+        return f"❌ Error retrieving questions: {str(e)}"
+
+
+@mcp.tool(name="forms_get_sections")
+async def forms_get_sections(form_id: str) -> str:
+    """Get all sections from a Google Form with navigation options.
+
+    IMPORTANT: Section numbers are 1-based for user interaction.
+    For example, "Training" is Section 7 (user-facing) but at internal index 6.
+
+    Args:
+        form_id: Google Form ID
+
+    Returns:
+        JSON-formatted list of sections with navigation details.
+        Each section includes both section_number (1-based) and internal_index (0-based).
+    """
+    await initialize_services()
+
+    try:
+        sections = forms_service.get_sections(form_id)
+
+        output = {"form_id": form_id, "total_sections": len(sections), "sections": []}
+
+        for i, section in enumerate(sections):
+            section_data = {
+                "section_number": i + 1,  # 1-based numbering for users
+                "internal_index": section["index"],  # Keep internal 0-based index
+                "title": section["title"],
+                "description": section.get("description", ""),
+                "question_count": section["question_count"],
+            }
+
+            if section.get("go_to_action"):
+                section_data["navigation"] = {
+                    "action": section["go_to_action"],
+                    "target_section_id": section.get("go_to_section_id"),
+                }
+
+            if section.get("item_id"):
+                section_data["item_id"] = section["item_id"]
+
+            output["sections"].append(section_data)
+
+        return f"✅ Sections retrieved successfully\n\n{json.dumps(output, ensure_ascii=False, indent=2)}"
+
+    except Exception as e:
+        return f"❌ Error retrieving sections: {str(e)}"
+
+
+@mcp.tool(name="forms_add_section")
+async def forms_add_section(
+    form_id: str,
+    title: str,
+    description: str = "",
+    position: str = "end",
+    section_number: Optional[int] = None,
+    question_number: Optional[int] = None,
+) -> str:
+    """Add a new section to a Google Form.
+
+    IMPORTANT: All section and question numbers use 1-based numbering.
+
+    Args:
+        form_id: Google Form ID
+        title: Section title
+        description: Section description (optional)
+        position: Position relative to reference ("before", "after", "end")
+        section_number: Section number for positioning (1-based, required if not "end")
+        question_number: Question number within section for positioning (1-based, required if not "end")
+
+    Returns:
+        Success message with section creation details
+    """
+    await initialize_services()
+
+    try:
+        response = forms_service.add_section(form_id, title, description, position, section_number, question_number)
+
+        return f"✅ Section '{title}' added successfully"
+
+    except Exception as e:
+        return f"❌ Error adding section: {str(e)}"
+
+
+@mcp.tool(name="forms_add_question")
+async def forms_add_question(
+    form_id: str,
+    title: str,
+    question_type: str = "text",
+    description: str = "",
+    required: bool = False,
+    section_index: int = 0,
+    position: str = "end",
+    reference_question: Optional[int] = None,
+    options: Optional[List[str]] = None,
+) -> str:
+    """Add a new question to a Google Form.
+
+    IMPORTANT: All numbering uses 1-based indexing for user interaction.
+    - section_index: Use 1-based section numbers (Training=7, Default=1)
+    - reference_question: Use 1-based question numbers (first question=1)
+    Service layer handles 1-based validation and conversion automatically.
+
+    Args:
+        form_id: Google Form ID
+        title: Question title
+        question_type: Question type ("text", "choice", "scale", "date", "time", "file_upload")
+        description: Question description (optional)
+        required: Whether the question is required
+        section_index: Target section number (1-based)
+        position: Position relative to reference ("before", "after", "end")
+        reference_question: Question number (1-based) for positioning (required for "before" and "after")
+        options: Choice options (for choice questions)
+
+    Returns:
+        Success message with question creation details
+    """
+    await initialize_services()
+
+    try:
+        question_data = {
+            "title": title,
+            "description": description,
+            "question_type": question_type,
+            "required": required,
+        }
+
+        if options and question_type == "choice":
+            question_data["options"] = options
+
+        # Service layer handles 1-based numbering validation and conversion
+        response = forms_service.add_question(form_id, question_data, section_index, position, reference_question)
+
+        output = {
+            "form_id": form_id,
+            "operation": "add_question",
+            "question_data": question_data,
+            "section_index": section_index,
+            "position": position,
+            "reference_question": reference_question,
+            "response": response,
+        }
+
+        return f"✅ Question '{title}' added successfully\n\n{json.dumps(output, ensure_ascii=False, indent=2)}"
+
+    except Exception as e:
+        return f"❌ Error adding question: {str(e)}"
+
+
+@mcp.tool(name="forms_update_section")
+async def forms_update_section(
+    form_id: str,
+    section_index: int,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    go_to_action: Optional[str] = None,
+    go_to_section_id: Optional[str] = None,
+) -> str:
+    """Update an existing section in a Google Form.
+
+    IMPORTANT: Section numbers are 1-based (Training = 7, not 6).
+    Tool automatically converts to internal 0-based indexing.
+
+    Args:
+        form_id: Google Form ID
+        section_index: Section number to update (1-based, e.g., Training = 7)
+        title: New section title (optional)
+        description: New section description (optional)
+        go_to_action: Navigation action after this section (optional)
+        go_to_section_id: Target section ID for navigation (optional)
+
+    Returns:
+        Success message with update details
+    """
+    await initialize_services()
+
+    try:
+        kwargs = {}
+        if title is not None:
+            kwargs["title"] = title
+        if description is not None:
+            kwargs["description"] = description
+        if go_to_action is not None:
+            kwargs["go_to_action"] = go_to_action
+        if go_to_section_id is not None:
+            kwargs["go_to_section_id"] = go_to_section_id
+
+        if not kwargs:
+            return "❌ No update parameters provided"
+
+        # Service layer handles 1-based numbering validation and conversion
+        response = forms_service.update_section(form_id, section_index, **kwargs)
+
+        output = {
+            "form_id": form_id,
+            "operation": "update_section",
+            "section_index": section_index,
+            "updated_data": kwargs,
+            "response": response,
+        }
+
+        return f"✅ Section {section_index} updated successfully\n\n{json.dumps(output, ensure_ascii=False, indent=2)}"
+
+    except Exception as e:
+        return f"❌ Error updating section: {str(e)}"
+
+
+@mcp.tool(name="forms_remove_section")
+async def forms_remove_section(form_id: str, section_index: int) -> str:
+    """Remove a section and all its questions from a Google Form.
+
+    Args:
+        form_id: Google Form ID
+        section_index: Section index to remove (0-based)
+
+    Returns:
+        Success message with removal details
+    """
+    await initialize_services()
+
+    try:
+        # Service layer handles 1-based numbering validation and conversion
+        response = forms_service.remove_section(form_id, section_index)
+
+        output = {
+            "form_id": form_id,
+            "operation": "remove_section",
+            "section_number": section_index,
+            "response": response,
+        }
+
+        return f"✅ Section {section_index} and its questions removed successfully\n\n{json.dumps(output, ensure_ascii=False, indent=2)}"
+
+    except Exception as e:
+        return f"❌ Error removing section: {str(e)}"
+
+
+@mcp.tool(name="forms_translate_question")
+async def forms_translate_question(
+    form_id: str,
+    section_number: int,
+    question_number_in_section: int,
+    target_language: str,
+    translate_answers: bool = True,
+    source_language: str = "",
+) -> str:
+    """Translate a question and optionally its answers to another language.
+
+    IMPORTANT: Section numbers and question numbers are 1-based (Section 7 = Training, Question 1 = first question in section).
+
+    Args:
+        form_id: Google Form ID
+        section_number: Section number (1-based, e.g., Training = 7)
+        question_number_in_section: Question number within the section (1-based, e.g., first question = 1)
+        target_language: Target language code (e.g., 'fr', 'es', 'de')
+        translate_answers: Whether to translate answer options (default: True)
+        source_language: Source language code (auto-detected if empty)
+
+    Returns:
+        Translation results and success message
+    """
+    await initialize_services()
+
+    try:
+        # Convert section + question to global question number using service-level filtering
+        section_questions_all = forms_service.get_questions(form_id, section_filter=section_number)
+        section_questions = [q for q in section_questions_all if not q.get("is_section_break")]
+
+        if (
+            not section_questions
+            or question_number_in_section < 1
+            or question_number_in_section > len(section_questions)
+        ):
+            return f"❌ Question {question_number_in_section} not found in section {section_number}"
+
+        # Get the global question number
+        target_question = section_questions[question_number_in_section - 1]
+        global_question_number = target_question.get("question_number")
+
+        if not global_question_number:
+            return f"❌ Could not find global question number for section {section_number}, question {question_number_in_section}"
+
+        result = await forms_service.translate_question(
+            form_id, global_question_number, target_language, translate_answers, source_language
+        )
+
+        output = {
+            "form_id": form_id,
+            "operation": "translate_question",
+            "section_number": section_number,
+            "question_number_in_section": question_number_in_section,
+            "global_question_number": global_question_number,
+            "target_language": target_language,
+            "source_language": source_language or "auto",
+            "translations": result["translations"],
+        }
+
+        return f"✅ Question {question_number_in_section} in section {section_number} translated to {target_language} successfully"
+
+    except Exception as e:
+        return f"❌ Error translating question: {str(e)}"
+
+
+@mcp.tool(name="forms_remove_question")
+async def forms_remove_question(form_id: str, section_number: int, question_number_in_section: int) -> str:
+    """Remove a question by section and question number within that section.
+
+    Args:
+        form_id: Google Form ID
+        section_number: Section number (1-based)
+        question_number_in_section: Question number within the section (1-based)
+
+    Returns:
+        Success message with removal details
+    """
+    await initialize_services()
+
+    try:
+        response = forms_service.remove_question_by_section(form_id, section_number, question_number_in_section)
+
+        output = {
+            "form_id": form_id,
+            "operation": "remove_question",
+            "section_number": section_number,
+            "question_number_in_section": question_number_in_section,
+            "response": response,
+        }
+
+        return f"✅ Question {question_number_in_section} from section {section_number} removed successfully\n\n{json.dumps(output, ensure_ascii=False, indent=2)}"
+
+    except Exception as e:
+        return f"❌ Error removing question: {str(e)}"
+
+
+@mcp.tool(name="forms_update_question")
+async def forms_update_question(
+    form_id: str,
+    section_number: int,
+    question_number_in_section: int,
+    title: str = None,
+    description: str = None,
+    question_type: str = None,
+    required: bool = None,
+    options: List[str] = None,
+) -> str:
+    """Update a question by section and question number within that section.
+
+    Args:
+        form_id: Google Form ID
+        section_number: Section number (1-based)
+        question_number_in_section: Question number within the section (1-based)
+        title: New question title (optional)
+        description: New question description (optional)
+        question_type: New question type (optional)
+        required: Whether the question is required (optional)
+        options: New choice options for choice questions (optional)
+
+    Returns:
+        Success message with update details
+    """
+    await initialize_services()
+
+    try:
+        # Build question data from provided parameters
+        question_data = {}
+        if title is not None:
+            question_data["title"] = title
+        if description is not None:
+            question_data["description"] = description
+        if question_type is not None:
+            question_data["question_type"] = question_type
+        if required is not None:
+            question_data["required"] = required
+        if options is not None:
+            question_data["options"] = options
+
+        if not question_data:
+            return "❌ Error: At least one field must be provided for update"
+
+        response = forms_service.update_question_by_section(
+            form_id, section_number, question_number_in_section, question_data
+        )
+
+        output = {
+            "form_id": form_id,
+            "operation": "update_question",
+            "section_number": section_number,
+            "question_number_in_section": question_number_in_section,
+            "updated_fields": question_data,
+            "response": response,
+        }
+
+        return f"✅ Question {question_number_in_section} in section {section_number} updated successfully"
+
+    except Exception as e:
+        return f"❌ Error updating question: {str(e)}"
+
+
+@mcp.tool(name="forms_move_question")
+async def forms_move_question(
+    form_id: str,
+    source_section_number: int,
+    source_question_number: int,
+    target_section_number: int,
+    target_question_number: int,
+    position: str = "before",
+) -> str:
+    """Move a question from one position to another.
+
+    IMPORTANT: All section and question numbers are 1-based.
+
+    Args:
+        form_id: Google Form ID
+        source_section_number: Source section number (1-based)
+        source_question_number: Source question number within section (1-based)
+        target_section_number: Target section number (1-based)
+        target_question_number: Target question number within section (1-based)
+        position: Position relative to target ("before", "after")
+
+    Returns:
+        Success message
+    """
+    await initialize_services()
+
+    try:
+        forms_service.move_question(
+            form_id,
+            source_section_number,
+            source_question_number,
+            target_section_number,
+            target_question_number,
+            position,
+        )
+
+        return f"✅ Question {source_question_number} moved from section {source_section_number} to section {target_section_number} successfully"
+
+    except Exception as e:
+        return f"❌ Error moving question: {str(e)}"
+
+
+@mcp.tool(name="forms_move_section")
+async def forms_move_section(
+    form_id: str,
+    source_section_number: int,
+    target_section_number: int,
+    position: str = "before",
+) -> str:
+    """Move a section to a new position relative to another section.
+
+    IMPORTANT: All section numbers are 1-based.
+
+    Args:
+        form_id: Google Form ID
+        source_section_number: Source section number (1-based)
+        target_section_number: Target section number (1-based)
+        position: Position relative to target section ("before", "after")
+
+    Returns:
+        Success message
+    """
+    await initialize_services()
+
+    try:
+        forms_service.move_section(
+            form_id,
+            source_section_number,
+            target_section_number,
+            position,
+        )
+
+        return f"✅ Section {source_section_number} moved {position} section {target_section_number} successfully"
+
+    except Exception as e:
+        return f"❌ Error moving section: {str(e)}"

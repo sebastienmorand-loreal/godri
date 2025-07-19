@@ -18,6 +18,7 @@ class AuthService:
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/presentations",
         "https://www.googleapis.com/auth/cloud-translation",
+        "https://www.googleapis.com/auth/forms",
     ]
 
     def __init__(self, oauth_token: Optional[str] = None):

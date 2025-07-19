@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Godri is a comprehensive Python CLI tool for Google Drive and Google Workspace operations with hierarchical command structure and MCP (Model Context Protocol) server integration. It provides complete functionality for Google Drive, Docs, Sheets, Slides, and Translation services.
+Godri is a comprehensive Python CLI tool for Google Drive and Google Workspace operations with hierarchical command structure and MCP (Model Context Protocol) server integration. It provides complete functionality for Google Drive, Docs, Sheets, Slides, Forms, and Translation services.
 
 ## Architecture
 
@@ -22,6 +22,7 @@ GodriCLI (main.py)
 ├── DocsService (docs_service.py) - Document CRUD, markdown support
 ├── SheetsService (sheets_service.py) - Spreadsheet operations, formatting
 ├── SlidesService (slides_service.py) - Presentation operations, content management
+├── FormsService (forms_service.py) - Forms CRUD operations, 1-based numbering
 └── TranslateService (translate_service.py) - Text translation
 ```
 
@@ -54,6 +55,15 @@ All services follow the same dependency injection pattern:
 - **Sheet Translation**: Range-based translation with formula preservation
 - **Smart Detection**: Automatically skips non-translatable content
 
+### Forms Management System
+- **Complete CRUD Operations**: Full create, read, update, delete for forms, sections, and questions
+- **1-Based Numbering**: User-friendly numbering system (Section 7 = Training, Question 20 = "Are you trained in IP?")
+- **Automatic Index Conversion**: All MCP tools and CLI convert 1-based user input to 0-based internal indexing
+- **Section Navigation**: Support for section navigation logic and conditional flow
+- **Question Types**: Text, choice, scale, date, time, file upload with proper validation
+- **Translation Support**: Translate questions and answer options while preserving form structure
+- **Positioning Control**: Insert sections and questions at specific positions (before/after/end)
+
 ## Development Standards
 
 ### Code Formatting
@@ -72,6 +82,7 @@ godri/
 │       ├── docs_service.py     # Google Docs with markdown support
 │       ├── sheets_service.py   # Google Sheets comprehensive operations
 │       ├── slides_service.py   # Google Slides comprehensive operations
+│       ├── forms_service.py    # Google Forms comprehensive operations
 │       ├── translate_service.py # Translation service
 │       └── mcp_server.py       # MCP server implementation
 ├── pyproject.toml              # UV dependency configuration
@@ -178,10 +189,18 @@ export GODRI_CLIENT_FILE="/path/to/client_secret.json"
 - **Collision Handling**: Automatic name resolution for duplicates
 - **Format Preservation**: Complete formatting and structure preservation
 
+### `forms_service.py`
+- **1-Based Numbering**: All user-facing operations use 1-based section/question numbering
+- **API Detection**: Checks for `pageBreakItem` key instead of `itemType` for section detection
+- **CRUD Operations**: Complete form, section, and question management
+- **Translation Integration**: Question and answer option translation support
+- **Section Navigation**: Support for conditional section navigation and flow control
+
 ### `mcp_server.py`
 - **Tool Definitions**: All tools use @mcp.tool decorator
 - **Service Access**: Global service instances with lazy initialization
 - **Error Handling**: Comprehensive try/catch with user-friendly messages
+- **Forms Tools**: 12 comprehensive tools with 1-based numbering and automatic index conversion
 - **Sheets Tools**: 13 comprehensive tools including formatting (format_range, copy_format, set_column_width)
 - **Structured Data**: JSON List[List] support for values_read/values_set operations
 - **Full CLI Parity**: All CLI formatting capabilities available through MCP tools
@@ -193,12 +212,16 @@ export GODRI_CLIENT_FILE="/path/to/client_secret.json"
 - Test range parsing with various formats
 - Verify theme preservation and formatting retention
 - Test MCP tools through CLI equivalents
+- Test Forms 1-based numbering with real forms (sections and questions)
+- Verify Forms translation preserves structure and formatting
 
 ### Error Scenarios
-- Invalid slide/sheet references
-- Permission errors
+- Invalid slide/sheet/form references
+- Permission errors (especially Forms API access)
 - API quota limits
 - Network connectivity issues
+- Forms section/question numbering confusion (1-based vs 0-based)
+- Forms API pageBreakItem vs itemType detection issues
 
 ## Common Issues & Solutions
 
@@ -216,6 +239,12 @@ export GODRI_CLIENT_FILE="/path/to/client_secret.json"
 - Verify source and target IDs are correct
 - Check permissions on target documents
 - Monitor API quota usage in Google Cloud Console
+
+### Forms Operation Issues
+- Ensure Google Forms API is enabled in Google Cloud Console
+- Remember that section/question numbers are 1-based (Section 7 = Training)
+- Verify form permissions for write operations
+- Check form ID format (different from Drive file IDs)
 
 ## Git Workflow
 
