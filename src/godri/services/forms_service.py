@@ -795,22 +795,22 @@ class FormsService:
                     break
                 section_items.append(item)
         else:
-            # Other sections: from section break until next section break or end
-            section_break_found = False
-            section_break_count = 0
+            # Other sections: from the (section_number-1)th pageBreakItem until the next pageBreakItem or end
+            current_section = 1  # We start in section 1 (default section)
+            collecting = False
 
             for item in items:
                 if "pageBreakItem" in item:
-                    section_break_count += 1
-                    if section_break_count == section_number - 1:
-                        # This is our section break
-                        section_break_found = True
+                    current_section += 1  # This pageBreakItem creates a new section
+                    if current_section == section_number:
+                        # This pageBreakItem starts our target section
+                        collecting = True
                         section_items.append(item)
-                    elif section_break_found:
-                        # Next section break - stop here
+                    elif collecting:
+                        # We've hit the next section break - stop collecting
                         break
-                elif section_break_found:
-                    # Question belonging to our section
+                elif collecting:
+                    # We're in our target section, collect this item
                     section_items.append(item)
 
         return section_items
