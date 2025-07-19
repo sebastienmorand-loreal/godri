@@ -1,0 +1,302 @@
+"""Google Drive API client with async aiohttp."""
+
+import json
+import logging
+from typing import Dict, Any, List, Optional
+from pathlib import Path
+from .google_api_client import GoogleApiClient
+
+
+class DriveApiClient:
+    """Async Google Drive API client."""
+
+    def __init__(self, api_client: GoogleApiClient):
+        self.api_client = api_client
+        self.logger = logging.getLogger(__name__)
+        self.base_url = "https://www.googleapis.com/drive/v3"
+        self.upload_url = "https://www.googleapis.com/upload/drive/v3/files"
+
+    async def search_files(
+        self,
+        query: str = "",
+        max_results: int = 100,
+        fields: str = "id, name, mimeType, parents, modifiedTime, size",
+        order_by: str = "modifiedTime desc",
+    ) -> Dict[str, Any]:
+        """Search for files in Google Drive."""
+        self.logger.info(f"Searching files with query: {query}")
+
+        params = {
+            "q": query,
+            "pageSize": min(max_results, 1000),  # API limit is 1000
+            "fields": f"nextPageToken, files({fields})",
+            "orderBy": order_by,
+        }
+
+        url = f"{self.base_url}/files"
+        result = await self.api_client.make_request("GET", url, params=params)
+
+        self.logger.info(f"Found {len(result.get('files', []))} files")
+        return result
+
+    async def get_file_info(
+        self, file_id: str, fields: str = "id, name, mimeType, parents, modifiedTime, size, webViewLink"
+    ) -> Dict[str, Any]:
+        """Get file information."""
+        self.logger.info(f"Getting file info for: {file_id}")
+
+        params = {"fields": fields}
+        url = f"{self.base_url}/files/{file_id}"
+
+        return await self.api_client.make_request("GET", url, params=params)
+
+    async def create_folder(
+        self, name: str, parent_folder_id: Optional[str] = None, fields: str = "id, name, webViewLink"
+    ) -> Dict[str, Any]:
+        """Create a new folder."""
+        self.logger.info(f"Creating folder: {name}")
+
+        metadata = {"name": name, "mimeType": "application/vnd.google-apps.folder"}
+
+        if parent_folder_id:
+            metadata["parents"] = [parent_folder_id]
+
+        params = {"fields": fields}
+        url = f"{self.base_url}/files"
+
+        result = await self.api_client.make_request("POST", url, params=params, data=metadata)
+        self.logger.info(f"Folder created successfully: {result.get('id')}")
+        return result
+
+    async def upload_file(
+        self,
+        file_path: str,
+        name: Optional[str] = None,
+        parent_folder_id: Optional[str] = None,
+        mime_type: Optional[str] = None,
+        fields: str = "id, name, webViewLink",
+    ) -> Dict[str, Any]:
+        """Upload a file to Google Drive."""
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        file_name = name or file_path.name
+        self.logger.info(f"Uploading file: {file_path} as {file_name}")
+
+        metadata = {"name": file_name}
+        if parent_folder_id:
+            metadata["parents"] = [parent_folder_id]
+        if mime_type:
+            metadata["mimeType"] = mime_type
+
+        # Use the upload URL with fields parameter
+        url = f"{self.upload_url}?fields={fields}"
+
+        result = await self.api_client.upload_file(url, str(file_path), metadata)
+        self.logger.info(f"File uploaded successfully: {result.get('id')}")
+        return result
+
+    async def download_file(self, file_id: str, output_path: str) -> str:
+        """Download a file from Google Drive."""
+        self.logger.info(f"Downloading file: {file_id} to {output_path}")
+
+        url = f"{self.base_url}/files/{file_id}"
+        params = {"alt": "media"}
+
+        # Make the request and handle the response manually for downloads
+        download_url = f"{url}?alt=media"
+        result_path = await self.api_client.download_file(download_url, output_path)
+
+        self.logger.info(f"File downloaded successfully to: {result_path}")
+        return result_path
+
+    async def download_file_smart(self, file_id: str, output_path: str) -> str:
+        """Download a file with smart format conversion for Google Workspace files."""
+        self.logger.info(f"Smart downloading file: {file_id} to {output_path}")
+
+        # Get file information to determine MIME type
+        file_info = await self.get_file_info(file_id, "mimeType, name")
+        mime_type = file_info.get("mimeType", "")
+        file_name = file_info.get("name", "unknown")
+
+        self.logger.info(f"File MIME type: {mime_type}")
+
+        # Define export formats for Google Workspace files
+        export_formats = {
+            "application/vnd.google-apps.document": {
+                "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "extension": ".docx",
+                "description": "Word format",
+            },
+            "application/vnd.google-apps.spreadsheet": {
+                "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "extension": ".xlsx",
+                "description": "Excel format",
+            },
+            "application/vnd.google-apps.presentation": {
+                "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "extension": ".pptx",
+                "description": "PowerPoint format",
+            },
+            "application/vnd.google-apps.drawing": {
+                "mime_type": "application/pdf",
+                "extension": ".pdf",
+                "description": "PDF format",
+            },
+            "application/vnd.google-apps.form": {
+                "mime_type": "application/pdf",
+                "extension": ".pdf",
+                "description": "PDF format",
+            },
+        }
+
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if mime_type in export_formats:
+            # Google Workspace file - export with conversion
+            export_info = export_formats[mime_type]
+            self.logger.info(f"Exporting Google Workspace file as {export_info['description']}")
+
+            # Ensure output path has correct extension
+            if not str(output_path).endswith(export_info["extension"]):
+                output_path = output_path.with_suffix(export_info["extension"])
+
+            url = f"{self.base_url}/files/{file_id}/export"
+            params = {"mimeType": export_info["mime_type"]}
+            export_url = f"{url}?mimeType={export_info['mime_type']}"
+
+            result_path = await self.api_client.download_file(export_url, str(output_path))
+            self.logger.info(f"File exported successfully to: {result_path} ({export_info['description']})")
+            return result_path
+        else:
+            # Regular file - download as-is
+            self.logger.info("Downloading regular file as-is")
+            return await self.download_file(file_id, str(output_path))
+
+    async def delete_file(self, file_id: str) -> bool:
+        """Delete a file or folder."""
+        self.logger.info(f"Deleting file: {file_id}")
+
+        url = f"{self.base_url}/files/{file_id}"
+
+        try:
+            await self.api_client.make_request("DELETE", url)
+            self.logger.info("File deleted successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to delete file: {e}")
+            return False
+
+    async def move_file_to_folder(self, file_id: str, folder_id: str) -> Dict[str, Any]:
+        """Move a file to a specific folder."""
+        self.logger.info(f"Moving file {file_id} to folder {folder_id}")
+
+        # Get current parents
+        file_info = await self.get_file_info(file_id, "parents")
+        current_parents = file_info.get("parents", [])
+
+        # Update file with new parent
+        url = f"{self.base_url}/files/{file_id}"
+        params = {"addParents": folder_id, "removeParents": ",".join(current_parents), "fields": "id, parents"}
+
+        result = await self.api_client.make_request("PATCH", url, params=params)
+        self.logger.info(f"File moved successfully to folder: {folder_id}")
+        return result
+
+    async def share_file(self, file_id: str, email: str, role: str = "reader", notify: bool = True) -> Dict[str, Any]:
+        """Share a file with a user."""
+        self.logger.info(f"Sharing file {file_id} with {email} as {role}")
+
+        permission_data = {"type": "user", "role": role, "emailAddress": email}
+
+        params = {"sendNotificationEmail": str(notify).lower()}
+        url = f"{self.base_url}/files/{file_id}/permissions"
+
+        result = await self.api_client.make_request("POST", url, params=params, data=permission_data)
+        self.logger.info(f"File shared successfully with {email}")
+        return result
+
+    async def copy_file(
+        self, file_id: str, name: str, parent_folder_id: Optional[str] = None, fields: str = "id, name, webViewLink"
+    ) -> Dict[str, Any]:
+        """Copy a file."""
+        self.logger.info(f"Copying file {file_id} as {name}")
+
+        metadata = {"name": name}
+        if parent_folder_id:
+            metadata["parents"] = [parent_folder_id]
+
+        params = {"fields": fields}
+        url = f"{self.base_url}/files/{file_id}/copy"
+
+        result = await self.api_client.make_request("POST", url, params=params, data=metadata)
+        self.logger.info(f"File copied successfully: {result.get('id')}")
+        return result
+
+    async def create_file_from_content(
+        self,
+        name: str,
+        content: str,
+        mime_type: str = "text/plain",
+        parent_folder_id: Optional[str] = None,
+        fields: str = "id, name, webViewLink",
+    ) -> Dict[str, Any]:
+        """Create a file from text content."""
+        self.logger.info(f"Creating file from content: {name}")
+
+        metadata = {"name": name, "mimeType": mime_type}
+        if parent_folder_id:
+            metadata["parents"] = [parent_folder_id]
+
+        # Create multipart form data
+        import aiohttp
+
+        data = aiohttp.FormData()
+        data.add_field("metadata", json.dumps(metadata), content_type="application/json")
+        data.add_field("file", content, filename=name, content_type=mime_type)
+
+        url = f"{self.upload_url}?fields={fields}"
+        result = await self.api_client.make_request("POST", url, files=data)
+
+        self.logger.info(f"File created successfully from content: {result.get('id')}")
+        return result
+
+    async def update_file(
+        self,
+        file_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        file_path: Optional[str] = None,
+        fields: str = "id, name, modifiedTime",
+    ) -> Dict[str, Any]:
+        """Update file metadata and/or content."""
+        self.logger.info(f"Updating file: {file_id}")
+
+        if file_path:
+            # Update both metadata and content
+            url = f"{self.upload_url}/{file_id}?fields={fields}"
+            result = await self.api_client.upload_file(url, file_path, metadata)
+        else:
+            # Update only metadata
+            url = f"{self.base_url}/files/{file_id}"
+            params = {"fields": fields}
+            result = await self.api_client.make_request("PATCH", url, params=params, data=metadata or {})
+
+        self.logger.info(f"File updated successfully: {file_id}")
+        return result
+
+    async def list_folder_contents(
+        self, folder_id: str, fields: str = "id, name, mimeType, modifiedTime, size"
+    ) -> List[Dict[str, Any]]:
+        """List contents of a specific folder."""
+        query = f"'{folder_id}' in parents and trashed=false"
+        result = await self.search_files(query=query, fields=fields)
+        return result.get("files", [])
+
+    async def find_folder_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        """Find a folder by name."""
+        query = f"name='{name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        result = await self.search_files(query=query, max_results=1)
+        files = result.get("files", [])
+        return files[0] if files else None

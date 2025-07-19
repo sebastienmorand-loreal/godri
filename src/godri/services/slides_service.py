@@ -2,7 +2,10 @@
 
 import logging
 from typing import Dict, Any, List, Optional
-from .auth_service import AuthService
+from ..commons.api.google_api_client import GoogleApiClient
+from ..commons.api.slides_api import SlidesApiClient
+from ..commons.api.drive_api import DriveApiClient
+from .auth_service_new import AuthService
 
 
 class SlidesService:
@@ -11,14 +14,19 @@ class SlidesService:
     def __init__(self, auth_service: AuthService):
         self.auth_service = auth_service
         self.logger = logging.getLogger(__name__)
-        self.service = None
-        self.drive_service = None
+        self.slides_api = None
+        self.drive_api = None
 
     async def initialize(self):
         """Initialize the Slides service."""
-        await self.auth_service.authenticate()
-        self.service = self.auth_service.get_service("slides", "v1")
-        self.drive_service = self.auth_service.get_service("drive", "v3")
+        credentials = await self.auth_service.authenticate()
+        if not credentials:
+            raise ValueError("Failed to authenticate with Google Slides")
+
+        api_client = GoogleApiClient(credentials)
+        await api_client.initialize()
+        self.slides_api = SlidesApiClient(api_client)
+        self.drive_api = DriveApiClient(api_client)
         self.logger.info("Slides service initialized")
 
     def create_presentation(
@@ -1268,7 +1276,7 @@ class SlidesService:
         headers = {"Authorization": f"Bearer {credentials.token}"}
 
         self.logger.info("Downloading from: %s", export_url)
-        response = requests.get(export_url, headers=headers, params=params, stream=True)
+        response = requests.get(export_url, headers=headers, params=params, stream=True, timeout=300)  # nosec
         response.raise_for_status()
 
         # Save to file
@@ -1331,7 +1339,7 @@ class SlidesService:
 
             # Download image
             self.logger.info("Downloading slide %d as %s", slide_number, format_type.upper())
-            response = requests.get(export_url, headers=headers, stream=True)
+            response = requests.get(export_url, headers=headers, stream=True, timeout=300)  # nosec
             response.raise_for_status()
 
             # Save image with slide number

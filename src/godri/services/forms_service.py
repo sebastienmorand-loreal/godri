@@ -2,7 +2,9 @@
 
 import logging
 from typing import List, Dict, Optional, Any, Union
-from .auth_service import AuthService
+from ..commons.api.google_api_client import GoogleApiClient
+from ..commons.api.forms_api import FormsApiClient
+from .auth_service_new import AuthService
 from .translate_service import TranslateService
 
 
@@ -13,15 +15,20 @@ class FormsService:
         self.auth_service = auth_service
         self.translate_service = translate_service
         self.logger = logging.getLogger(__name__)
-        self.service = None
+        self.forms_api = None
 
     async def initialize(self):
         """Initialize the Forms service."""
-        await self.auth_service.authenticate()
-        self.service = self.auth_service.get_service("forms", "v1")
+        credentials = await self.auth_service.authenticate()
+        if not credentials:
+            raise ValueError("Failed to authenticate with Google Forms")
+
+        api_client = GoogleApiClient(credentials)
+        await api_client.initialize()
+        self.forms_api = FormsApiClient(api_client)
         self.logger.info("Forms service initialized")
 
-    def get_form(self, form_id: str) -> Dict[str, Any]:
+    async def get_form(self, form_id: str) -> Dict[str, Any]:
         """Get complete form structure including questions and sections.
 
         Args:
@@ -32,7 +39,7 @@ class FormsService:
         """
         self.logger.info("Getting form structure: %s", form_id)
 
-        form = self.service.forms().get(formId=form_id).execute()
+        form = await self.forms_api.get_form(form_id)
 
         # Process and organize the form structure
         processed_form = self._process_form_structure(form)
@@ -40,7 +47,7 @@ class FormsService:
         self.logger.info("Form retrieved successfully with %d items", len(processed_form.get("items", [])))
         return processed_form
 
-    def get_questions(self, form_id: str, section_filter: Optional[int] = None) -> List[Dict[str, Any]]:
+    async def get_questions(self, form_id: str, section_filter: Optional[int] = None) -> List[Dict[str, Any]]:
         """Get all questions from a form organized by sections.
 
         Args:
@@ -54,7 +61,7 @@ class FormsService:
         """
         self.logger.info("Getting all questions from form: %s", form_id)
 
-        form = self.get_form(form_id)
+        form = await self.get_form(form_id)
         questions = []
         current_section = {"title": "Default Section", "description": "", "index": 0}
         question_number = 1

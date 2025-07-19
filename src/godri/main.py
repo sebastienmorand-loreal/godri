@@ -89,9 +89,9 @@ class GodriCLI:
     async def handle_search(self, args):
         """Handle file search command."""
         if args.name:
-            results = self.drive_service.search_by_name(args.name, args.mime_type)
+            results = await self.drive_service.search_by_name(args.name, args.mime_type)
         else:
-            results = self.drive_service.search_files(args.query, args.limit)
+            results = await self.drive_service.search_files(args.query, args.limit)
 
         if not results:
             print("No files found.")
@@ -128,7 +128,7 @@ class GodriCLI:
     async def handle_create_folder(self, args):
         """Handle folder creation command."""
         try:
-            result = self.drive_service.create_folder(args.name, args.parent_id)
+            result = await self.drive_service.create_folder(args.name, args.parent_id)
             print(f"Folder created successfully!")
             print(f"  - ID: {result['id']}")
             print(f"  - Name: {result['name']}")
@@ -140,7 +140,7 @@ class GodriCLI:
     async def handle_delete(self, args):
         """Handle file/folder deletion command."""
         try:
-            success = self.drive_service.delete_file(args.file_id)
+            success = await self.drive_service.delete_file(args.file_id)
             if success:
                 print("File/folder deleted successfully!")
             else:
@@ -153,17 +153,17 @@ class GodriCLI:
     async def handle_create_doc(self, args):
         """Handle Google Doc creation command."""
         try:
-            result = self.docs_service.create_document(args.title, args.folder_id)
+            result = await self.docs_service.create_document(args.title, args.folder_id)
             print(f"Document created successfully!")
             print(f"  - ID: {result['documentId']}")
             print(f"  - Title: {result['title']}")
 
             if args.content:
                 if args.markdown:
-                    self.docs_service.insert_markdown_text(result["documentId"], args.content)
+                    await self.docs_service.insert_markdown_text(result["documentId"], args.content)
                     print("Markdown content added to document with formatting.")
                 else:
-                    self.docs_service.insert_text(result["documentId"], args.content)
+                    await self.docs_service.insert_text(result["documentId"], args.content)
                     print("Content added to document.")
         except Exception as e:
             self.logger.error("Document creation failed: %s", str(e))

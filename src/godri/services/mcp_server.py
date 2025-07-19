@@ -6,7 +6,7 @@ import logging
 from typing import List, Optional
 import os
 from mcp.server.fastmcp import FastMCP
-from .auth_service import AuthService
+from .auth_service_new import AuthService
 from .drive_service import DriveService
 from .docs_service import DocsService
 from .sheets_service import SheetsService
@@ -84,17 +84,8 @@ async def initialize_services():
     if auth_service is not None:
         return  # Already initialized
 
-    # Try to get token from environment or default location
-    token_path = os.path.expanduser("~/.godri-token.json")
-    oauth_token = None
-    if os.path.exists(token_path):
-        with open(token_path, "r") as f:
-            import json
-
-            token_data = json.load(f)
-            oauth_token = token_data.get("access_token")
-
-    auth_service = AuthService(oauth_token=oauth_token)
+    # Initialize with new async auth service
+    auth_service = AuthService()
     drive_service = DriveService(auth_service)
     docs_service = DocsService(auth_service)
     sheets_service = SheetsService(auth_service)
@@ -121,9 +112,9 @@ async def drive_search(query: str = "", name: str = "", mime_type: str = "", lim
     await initialize_services()
 
     if name:
-        result = drive_service.search_by_name(name, mime_type)
+        result = await drive_service.search_by_name(name, mime_type)
     else:
-        result = drive_service.search_files(query, limit)
+        result = await drive_service.search_files(query, limit)
 
     return str(result)
 
@@ -154,7 +145,7 @@ async def drive_folder_create(name: str, parent_id: str = "") -> str:
     """Create a new folder in Google Drive. Optionally specify a parent folder ID."""
     await initialize_services()
 
-    result = drive_service.create_folder(name, parent_id if parent_id else None)
+    result = await drive_service.create_folder(name, parent_id if parent_id else None)
     return str(result)
 
 
@@ -163,7 +154,7 @@ async def drive_folder_delete(file_id: str) -> str:
     """Delete a file or folder from Google Drive by its ID."""
     await initialize_services()
 
-    success = drive_service.delete_file(file_id)
+    success = await drive_service.delete_file(file_id)
     return "File/folder deleted successfully!" if success else "Failed to delete file/folder."
 
 
@@ -173,13 +164,13 @@ async def docs_createdocument(title: str, folder_id: str = "", content: str = ""
     """Create a new Google Doc with specified title. Optionally add initial content and specify if content is markdown."""
     await initialize_services()
 
-    result = docs_service.create_document(title, folder_id if folder_id else None)
+    result = await docs_service.create_document(title, folder_id if folder_id else None)
 
     if content:
         if markdown:
-            docs_service.insert_markdown_text(result["documentId"], content)
+            await docs_service.insert_markdown_text(result["documentId"], content)
         else:
-            docs_service.insert_text(result["documentId"], content)
+            await docs_service.insert_text(result["documentId"], content)
 
     return str(result)
 
@@ -190,10 +181,10 @@ async def docs_read(document_id: str, plain_text: bool = False) -> str:
     await initialize_services()
 
     if plain_text:
-        return docs_service.get_document_text(document_id)
+        return await docs_service.get_document_text(document_id)
     else:
-        document = docs_service.get_document(document_id)
-        content = docs_service.get_document_text(document_id)
+        document = await docs_service.get_document(document_id)
+        content = await docs_service.get_document_text(document_id)
         return f"Document: {document.get('title', 'Untitled')}\nContent:\n{content}"
 
 
@@ -250,7 +241,7 @@ async def sheets_createdocument(title: str, folder_id: str = "") -> str:
     """Create a new Google Spreadsheet with specified title. Optionally specify parent folder ID."""
     await initialize_services()
 
-    result = sheets_service.create_spreadsheet(title, folder_id if folder_id else None)
+    result = await sheets_service.create_spreadsheet(title, folder_id if folder_id else None)
     return str(result)
 
 
@@ -259,7 +250,7 @@ async def sheets_read(spreadsheet_id: str) -> str:
     """List all sheets in a Google Spreadsheet with their properties."""
     await initialize_services()
 
-    result = sheets_service.list_sheets(spreadsheet_id)
+    result = await sheets_service.list_sheets(spreadsheet_id)
     return str(result)
 
 
@@ -268,7 +259,7 @@ async def sheets_create(spreadsheet_id: str, sheet_name: str) -> str:
     """Create a new sheet within an existing Google Spreadsheet."""
     await initialize_services()
 
-    result = sheets_service.create_sheet(spreadsheet_id, sheet_name)
+    result = await sheets_service.create_sheet(spreadsheet_id, sheet_name)
     return f"Sheet '{sheet_name}' created successfully"
 
 
@@ -383,7 +374,7 @@ async def sheets_values_set(spreadsheet_id: str, range_name: str, values: str) -
         parsed_values = [v.strip() for v in values.split(",")]
 
     # Always set as values (not formulas) - uses RAW input option
-    result = sheets_service.set_values_in_range(spreadsheet_id, range_name, parsed_values)
+    result = await sheets_service.set_values_in_range(spreadsheet_id, range_name, parsed_values)
 
     return f"Values set successfully in range '{range_name}'. Updated {result.get('updatedCells', 0)} cells"
 
@@ -424,12 +415,12 @@ async def sheets_set_formula(spreadsheet_id: str, range_name: str, formulas: str
             # Ensure it's a list of lists
             if parsed_formulas and not isinstance(parsed_formulas[0], list):
                 parsed_formulas = [parsed_formulas]  # Convert single row to List[List]
-            result = sheets_service.set_formulas_in_range(spreadsheet_id, range_name, parsed_formulas)
+            result = await sheets_service.set_formulas_in_range(spreadsheet_id, range_name, parsed_formulas)
         except json.JSONDecodeError:
             return 'Error: Invalid JSON format. Use format like \'[["=A1+B1","=A1*2"]]\' for formula tables.'
     else:
         # Single formula
-        result = sheets_service.set_formulas_in_range(spreadsheet_id, range_name, formulas)
+        result = await sheets_service.set_formulas_in_range(spreadsheet_id, range_name, formulas)
 
     return f"Formulas set successfully in range '{range_name}'. Updated {result.get('updatedCells', 0)} cells"
 
@@ -476,7 +467,7 @@ async def sheets_values_copy(
     await initialize_services()
 
     try:
-        result = sheets_service.copy_range_values(spreadsheet_id, source_range, destination_range, copy_type)
+        result = await sheets_service.copy_range_values(spreadsheet_id, source_range, destination_range, copy_type)
 
         return f"✅ Range '{source_range}' copied to '{destination_range}' successfully\nCopy type: {result['copy_type']} (paste type: {result['paste_type']})"
 
@@ -490,7 +481,7 @@ async def slides_createdocument(title: str, folder_id: str = "", theme: str = "S
     """Create a new Google Slides presentation with specified title and theme. Available themes: SIMPLE_LIGHT, SIMPLE_DARK, STREAMLINE, FOCUS, etc."""
     await initialize_services()
 
-    result = slides_service.create_presentation(title, folder_id if folder_id else None, theme)
+    result = await slides_service.create_presentation(title, folder_id if folder_id else None, theme)
     return str(result)
 
 
@@ -509,7 +500,7 @@ async def slides_add(presentation_id: str, layout: str = "BLANK", position: int 
     await initialize_services()
 
     pos = None if position == -1 else position
-    result = slides_service.add_slide(presentation_id, layout, pos)
+    result = await slides_service.add_slide(presentation_id, layout, pos)
     return "Slide added successfully"
 
 
@@ -518,7 +509,7 @@ async def slides_remove(presentation_id: str, slide_id: str) -> str:
     """Remove a slide from presentation by slide ID."""
     await initialize_services()
 
-    result = slides_service.remove_slide(presentation_id, slide_id)
+    result = await slides_service.remove_slide(presentation_id, slide_id)
     return f"Slide {slide_id} removed successfully"
 
 
@@ -537,15 +528,15 @@ async def slides_content_add(
     await initialize_services()
 
     if content_type == "text":
-        result = slides_service.add_text_content(presentation_id, slide_id, content, x, y, width, height)
+        result = await slides_service.add_text_content(presentation_id, slide_id, content, x, y, width, height)
         return f"Text content added to slide {slide_id}"
     elif content_type == "image":
-        result = slides_service.add_image_content(presentation_id, slide_id, content, x, y, width, height)
+        result = await slides_service.add_image_content(presentation_id, slide_id, content, x, y, width, height)
         return f"Image content added to slide {slide_id}"
     elif content_type == "table":
         if "x" in content.lower():
             rows, cols = map(int, content.lower().split("x"))
-            result = slides_service.add_table_content(presentation_id, slide_id, rows, cols, x, y, width, height)
+            result = await slides_service.add_table_content(presentation_id, slide_id, rows, cols, x, y, width, height)
             return f"Table ({rows}x{cols}) added to slide {slide_id}"
         else:
             return "Table content must be in format 'ROWSxCOLS' (e.g., '3x4')"
@@ -710,7 +701,7 @@ async def slides_copy(
     # Parse slide identifiers into list
     identifiers = [id.strip() for id in slide_identifiers.split(",")]
 
-    result = slides_service.copy_slides(
+    result = await slides_service.copy_slides(
         source_presentation_id,
         target_presentation_id,
         identifiers,
@@ -739,7 +730,7 @@ async def sheets_copy(
 
     if len(names) == 1 and target_name:
         # Single sheet copy with custom name
-        result = sheets_service.copy_sheet(
+        result = await sheets_service.copy_sheet(
             source_spreadsheet_id,
             target_spreadsheet_id,
             names[0],
@@ -749,7 +740,7 @@ async def sheets_copy(
         return f"Successfully copied sheet '{result['source_sheet']}' to '{result['target_sheet']}' (ID: {result['new_sheet_id']})"
     else:
         # Multiple sheets copy
-        result = sheets_service.copy_multiple_sheets(
+        result = await sheets_service.copy_multiple_sheets(
             source_spreadsheet_id, target_spreadsheet_id, names, preserve_formatting=preserve_formatting
         )
 
@@ -880,7 +871,7 @@ async def sheets_format_range(
         return "No formatting options specified. Please provide at least one formatting parameter."
 
     try:
-        result = sheets_service.format_range(spreadsheet_id, range_name, format_options)
+        result = await sheets_service.format_range(spreadsheet_id, range_name, format_options)
         return f"Formatting applied successfully to range '{range_name}'"
     except Exception as e:
         return f"Error applying formatting: {str(e)}"
@@ -946,7 +937,7 @@ async def sheets_set_column_width(
         start_col_index = ord(start_column.upper()) - ord("A")
         end_col_index = ord(end_column.upper()) - ord("A")
 
-        result = sheets_service.set_column_width(spreadsheet_id, sheet_id, start_col_index, end_col_index, width)
+        result = await sheets_service.set_column_width(spreadsheet_id, sheet_id, start_col_index, end_col_index, width)
 
         if start_column == end_column:
             return f"Column '{start_column}' width set to {width} pixels"
@@ -979,7 +970,7 @@ async def sheets_import_csv_file(
     await initialize_services()
 
     try:
-        result = sheets_service.import_csv_file(
+        result = await sheets_service.import_csv_file(
             csv_file_path, spreadsheet_id if spreadsheet_id else None, sheet_name, folder_id if folder_id else None
         )
 
@@ -1013,7 +1004,7 @@ async def sheets_import_csv_data(
     await initialize_services()
 
     try:
-        result = sheets_service.import_csv_data(csv_data, spreadsheet_id, sheet_name, start_range)
+        result = await sheets_service.import_csv_data(csv_data, spreadsheet_id, sheet_name, start_range)
 
         return f"✅ CSV data imported successfully to sheet '{result['sheet_name']}'\nRange: {result['range']}\nImported {result['rows_imported']} rows and {result['columns_imported']} columns\nUpdated {result['cells_updated']} cells"
     except Exception as e:
@@ -1039,7 +1030,7 @@ async def sheets_rename(spreadsheet_id: str, sheet_name: str, new_name: str) -> 
     await initialize_services()
 
     try:
-        result = sheets_service.rename_sheet(spreadsheet_id, sheet_name, new_name)
+        result = await sheets_service.rename_sheet(spreadsheet_id, sheet_name, new_name)
         return f"✅ Sheet '{sheet_name}' renamed to '{new_name}' successfully"
     except Exception as e:
         return f"❌ Error renaming sheet: {str(e)}"
@@ -1080,7 +1071,7 @@ async def sheets_read_range_details(spreadsheet_id: str, range_name: str) -> str
     await initialize_services()
 
     try:
-        result = sheets_service.get_range_details(spreadsheet_id, range_name)
+        result = await sheets_service.get_range_details(spreadsheet_id, range_name)
 
         # Format the output for better readability
         import json
@@ -1108,7 +1099,7 @@ async def translate_text(text: str, target_language: str, source_language: str =
     """Translate text using Google Translate. Specify target language code (e.g., 'fr', 'es'). Source language is auto-detected if not specified."""
     await initialize_services()
 
-    result = translate_service.translate_text(text, target_language, source_language if source_language else None)
+    result = await translate_service.translate_text(text, target_language, source_language if source_language else None)
     return str(result)
 
 
@@ -1155,11 +1146,11 @@ async def speech_to_text(
 
         # Choose transcription method
         if use_long_running or properties["recommended_method"] == "long":
-            result = speech_service.transcribe_audio_long(
+            result = await speech_service.transcribe_audio_long(
                 audio_file_path, language_code, enable_punctuation, enable_word_timing, None, properties
             )
         else:
-            result = speech_service.transcribe_audio_file(
+            result = await speech_service.transcribe_audio_file(
                 audio_file_path, language_code, enable_punctuation, enable_word_timing, None, properties
             )
 
@@ -1776,7 +1767,7 @@ async def slides_content_remove(presentation_id: str, slide_id: str, element_id:
     await initialize_services()
 
     try:
-        result = slides_service.remove_content_element(presentation_id, slide_id, element_id)
+        result = await slides_service.remove_content_element(presentation_id, slide_id, element_id)
         return f"✅ Content element {element_id} removed from slide {slide_id} successfully"
 
     except Exception as e:
@@ -1800,7 +1791,7 @@ async def slides_content_move(presentation_id: str, slide_id: str, element_id: s
     await initialize_services()
 
     try:
-        result = slides_service.move_content_element(presentation_id, slide_id, element_id, x, y)
+        result = await slides_service.move_content_element(presentation_id, slide_id, element_id, x, y)
         return f"✅ Content element {element_id} moved to position ({x}, {y}) successfully"
 
     except Exception as e:
@@ -1822,7 +1813,7 @@ async def slides_themes_import(presentation_id: str, template_id: str, set_theme
     await initialize_services()
 
     try:
-        result = slides_service.import_theme(presentation_id, template_id, set_theme)
+        result = await slides_service.import_theme(presentation_id, template_id, set_theme)
         message = f"✅ Theme imported from presentation {template_id} successfully"
         if set_theme:
             message += " and applied to presentation"
@@ -1846,7 +1837,7 @@ async def slides_themes_set(presentation_id: str, theme_name: str) -> str:
     await initialize_services()
 
     try:
-        result = slides_service.set_theme(presentation_id, theme_name)
+        result = await slides_service.set_theme(presentation_id, theme_name)
         return f"✅ Theme '{theme_name}' applied to presentation {presentation_id} successfully"
 
     except Exception as e:
@@ -1890,7 +1881,7 @@ async def slides_move(presentation_id: str, slide_id: str, new_position: int) ->
     await initialize_services()
 
     try:
-        result = slides_service.move_slide(presentation_id, slide_id, new_position)
+        result = await slides_service.move_slide(presentation_id, slide_id, new_position)
         return f"✅ Slide moved to position {new_position} successfully"
 
     except Exception as e:
