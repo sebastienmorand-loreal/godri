@@ -1,18 +1,21 @@
-"""Authentication service for Google APIs - refactored for async architecture."""
+"""Authentication service for Google APIs using aiogoogle."""
 
 import os
 import logging
 import json
 import asyncio
 from typing import Optional
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from pathlib import Path
+
+from aiogoogle import Aiogoogle
+from aiogoogle.auth.creds import UserCreds
+from aiogoogle.auth.managers import Oauth2Manager
+
 from ..commons.api.google_api_client import GoogleApiClient
 
 
 class AuthService:
-    """Handle Google API authentication with async support."""
+    """Handle Google API authentication using aiogoogle."""
 
     SCOPES = [
         "https://www.googleapis.com/auth/drive",
@@ -31,10 +34,11 @@ class AuthService:
             oauth_token: Optional OAuth token for direct authentication
         """
         self.logger = logging.getLogger(__name__)
-        self.credentials: Optional[Credentials] = None
+        self.user_creds: Optional[UserCreds] = None
         self.oauth_token = oauth_token
         self.client_secret_file = os.getenv("GODRI_CLIENT_FILE")
         self.api_client: Optional[GoogleApiClient] = None
+        self.token_file = os.path.expanduser("~/.godri-token.json")
 
         if not self.oauth_token and not self.client_secret_file:
             raise ValueError("Either oauth_token or GODRI_CLIENT_FILE environment variable is required")
@@ -42,52 +46,52 @@ class AuthService:
         if self.client_secret_file and not os.path.exists(self.client_secret_file):
             raise FileNotFoundError(f"Client secret file not found: {self.client_secret_file}")
 
-    async def authenticate(self) -> Credentials:
+    async def authenticate(self, force_reauth: bool = False) -> UserCreds:
         """Authenticate user and return credentials.
 
+        Args:
+            force_reauth: Force re-authentication even if valid credentials exist
+
         Returns:
-            Google OAuth2 credentials
+            aiogoogle UserCreds object
         """
         self.logger.info("Starting authentication process")
 
-        if self.oauth_token:
+        # If we have a direct OAuth token, use it
+        if self.oauth_token and not force_reauth:
             self.logger.info("Using OAuth token from headers")
-            self.credentials = Credentials(token=self.oauth_token)
+            self.user_creds = UserCreds(access_token=self.oauth_token)
             self.logger.info("Authentication successful with OAuth token")
-            return self.credentials
+            return self.user_creds
 
-        token_file = os.path.expanduser("~/.godri-token.json")
+        # Try to load existing credentials
+        if not force_reauth and os.path.exists(self.token_file):
+            self.logger.info("Loading existing credentials from %s", self.token_file)
+            try:
+                self.user_creds = await self._load_credentials()
 
-        if os.path.exists(token_file):
-            self.logger.info("Loading existing credentials from %s", token_file)
-            self.credentials = Credentials.from_authorized_user_file(token_file, self.SCOPES)
+                # Check if credentials are still valid
+                if self.user_creds and not self.user_creds.expired:
+                    self.logger.info("Using valid existing credentials")
+                    return self.user_creds
+                elif self.user_creds and self.user_creds.refresh_token:
+                    self.logger.info("Refreshing expired credentials")
+                    refreshed_creds = await self._refresh_credentials()
+                    if refreshed_creds:
+                        return refreshed_creds
 
-        if not self.credentials or not self.credentials.valid:
-            if self.credentials and self.credentials.expired and self.credentials.refresh_token:
-                self.logger.info("Refreshing expired credentials")
-                try:
-                    self.credentials.refresh(Request())
-                    self.logger.info("Credentials refreshed successfully")
-                except Exception as e:
-                    self.logger.warning("Failed to refresh credentials: %s", str(e))
-                    self.credentials = None
+            except Exception as e:
+                self.logger.warning("Failed to load/refresh existing credentials: %s", str(e))
 
-            if not self.credentials:
-                self.logger.info("Starting OAuth flow")
-                flow = InstalledAppFlow.from_client_secrets_file(self.client_secret_file, self.SCOPES)
-                # Run the OAuth flow in a thread to avoid blocking
-                self.credentials = await asyncio.get_event_loop().run_in_executor(
-                    None, flow.run_local_server, {"port": 0}
-                )
-                self.logger.info("OAuth flow completed successfully")
+        # Perform new OAuth flow
+        self.logger.info("Starting new OAuth flow")
+        self.user_creds = await self._perform_oauth_flow()
 
-            # Save the credentials for future use
-            with open(token_file, "w") as token:
-                token.write(self.credentials.to_json())
-            self.logger.info("Credentials saved to %s", token_file)
+        # Save credentials for future use
+        await self._save_credentials()
 
         self.logger.info("Authentication successful")
-        return self.credentials
+        return self.user_creds
 
     async def get_api_client(self) -> GoogleApiClient:
         """Get authenticated Google API client.
@@ -95,72 +99,62 @@ class AuthService:
         Returns:
             Initialized Google API client
         """
-        if not self.credentials:
+        if not self.user_creds:
             await self.authenticate()
 
         if not self.api_client:
-            self.api_client = GoogleApiClient(self.credentials)
+            self.api_client = GoogleApiClient(credentials_path=self.client_secret_file, user_creds=self.user_creds)
             await self.api_client.initialize()
 
         return self.api_client
 
-    async def ensure_valid_credentials(self) -> Credentials:
-        """Ensure credentials are valid, refreshing if necessary.
+    async def is_authenticated(self) -> bool:
+        """Check if user is currently authenticated.
 
         Returns:
-            Valid credentials
+            True if authenticated with valid credentials
         """
-        if not self.credentials:
-            return await self.authenticate()
+        if not self.user_creds:
+            return False
 
-        if self.credentials.expired and self.credentials.refresh_token:
-            self.logger.info("Refreshing expired credentials")
-            try:
-                self.credentials.refresh(Request())
+        return not self.user_creds.expired
 
-                # Update saved token file
-                token_file = os.path.expanduser("~/.godri-token.json")
-                with open(token_file, "w") as token:
-                    token.write(self.credentials.to_json())
+    async def get_user_info(self) -> Optional[dict]:
+        """Get authenticated user information.
 
-                self.logger.info("Credentials refreshed and saved")
-            except Exception as e:
-                self.logger.error("Failed to refresh credentials: %s", str(e))
-                # Force re-authentication
-                return await self.authenticate()
+        Returns:
+            User info dictionary or None if not authenticated
+        """
+        try:
+            api_client = await self.get_api_client()
+            oauth2_service = await api_client.discover_service("oauth2", "v2")
 
-        return self.credentials
+            user_info = await api_client.execute_request(oauth2_service, "userinfo.get")
+            return user_info
+
+        except Exception as e:
+            self.logger.error("Failed to get user info: %s", str(e))
+            return None
 
     async def revoke_credentials(self) -> bool:
-        """Revoke current credentials.
+        """Revoke current credentials and remove token file.
 
         Returns:
-            True if revocation was successful
+            True if successful
         """
-        if not self.credentials:
-            return True
-
         try:
-            # Revoke the token
-            if self.credentials.token:
-                import aiohttp
+            if self.user_creds and self.user_creds.access_token:
+                # Try to revoke the token
+                async with Aiogoogle(client_creds_file=self.client_secret_file) as aiogoogle:
+                    await aiogoogle.oauth2.revoke(self.user_creds)
 
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        "https://oauth2.googleapis.com/revoke", params={"token": self.credentials.token}
-                    ) as response:
-                        success = response.status == 200
+            # Remove token file
+            if os.path.exists(self.token_file):
+                os.remove(self.token_file)
 
-            # Remove local token file
-            token_file = os.path.expanduser("~/.godri-token.json")
-            if os.path.exists(token_file):
-                os.remove(token_file)
-
-            # Clear credentials
-            self.credentials = None
-            if self.api_client:
-                await self.api_client.close()
-                self.api_client = None
+            # Clear in-memory credentials
+            self.user_creds = None
+            self.api_client = None
 
             self.logger.info("Credentials revoked successfully")
             return True
@@ -169,8 +163,133 @@ class AuthService:
             self.logger.error("Failed to revoke credentials: %s", str(e))
             return False
 
+    async def _load_credentials(self) -> Optional[UserCreds]:
+        """Load credentials from token file."""
+        try:
+            with open(self.token_file, "r") as f:
+                creds_data = json.load(f)
+
+            return UserCreds(
+                access_token=creds_data.get("access_token"),
+                refresh_token=creds_data.get("refresh_token"),
+                expires_at=creds_data.get("expires_at"),
+                scopes=creds_data.get("scopes", self.SCOPES),
+            )
+
+        except Exception as e:
+            self.logger.error("Failed to load credentials: %s", str(e))
+            return None
+
+    async def _save_credentials(self) -> bool:
+        """Save credentials to token file."""
+        try:
+            if not self.user_creds:
+                return False
+
+            creds_data = {
+                "access_token": self.user_creds.access_token,
+                "refresh_token": self.user_creds.refresh_token,
+                "expires_at": self.user_creds.expires_at,
+                "scopes": self.user_creds.scopes or self.SCOPES,
+            }
+
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.token_file), exist_ok=True)
+
+            with open(self.token_file, "w") as f:
+                json.dump(creds_data, f, indent=2)
+
+            self.logger.info("Credentials saved to %s", self.token_file)
+            return True
+
+        except Exception as e:
+            self.logger.error("Failed to save credentials: %s", str(e))
+            return False
+
+    async def _refresh_credentials(self) -> Optional[UserCreds]:
+        """Refresh expired credentials."""
+        try:
+            if not self.user_creds or not self.user_creds.refresh_token:
+                return None
+
+            async with Aiogoogle(client_creds_file=self.client_secret_file) as aiogoogle:
+                refreshed_creds = await aiogoogle.oauth2.refresh(self.user_creds)
+
+            self.user_creds = refreshed_creds
+            await self._save_credentials()
+
+            self.logger.info("Credentials refreshed successfully")
+            return self.user_creds
+
+        except Exception as e:
+            self.logger.error("Failed to refresh credentials: %s", str(e))
+            return None
+
+    async def _perform_oauth_flow(self) -> UserCreds:
+        """Perform OAuth2 flow to get new credentials."""
+        try:
+            async with Aiogoogle(client_creds_file=self.client_secret_file) as aiogoogle:
+                # Get authorization URL
+                auth_uri = aiogoogle.oauth2.authorization_url(
+                    scopes=self.SCOPES, access_type="offline", include_granted_scopes=True, prompt="consent"
+                )
+
+                print(f"\nPlease visit this URL to authorize the application:")
+                print(f"{auth_uri}")
+
+                # Get authorization code from user
+                auth_code = input("\nEnter the authorization code: ").strip()
+
+                # Exchange code for credentials
+                user_creds = await aiogoogle.oauth2.build_user_creds(grant=auth_code, scopes=self.SCOPES)
+
+                return user_creds
+
+        except Exception as e:
+            self.logger.error("OAuth flow failed: %s", str(e))
+            raise
+
+    async def get_authorization_url(self) -> str:
+        """Get authorization URL for OAuth flow.
+
+        Returns:
+            Authorization URL for user to visit
+        """
+        try:
+            async with Aiogoogle(client_creds_file=self.client_secret_file) as aiogoogle:
+                auth_uri = aiogoogle.oauth2.authorization_url(
+                    scopes=self.SCOPES, access_type="offline", include_granted_scopes=True, prompt="consent"
+                )
+                return auth_uri
+
+        except Exception as e:
+            self.logger.error("Failed to get authorization URL: %s", str(e))
+            raise
+
+    async def exchange_code_for_credentials(self, auth_code: str) -> UserCreds:
+        """Exchange authorization code for credentials.
+
+        Args:
+            auth_code: Authorization code from OAuth flow
+
+        Returns:
+            User credentials
+        """
+        try:
+            async with Aiogoogle(client_creds_file=self.client_secret_file) as aiogoogle:
+                user_creds = await aiogoogle.oauth2.build_user_creds(grant=auth_code, scopes=self.SCOPES)
+
+                self.user_creds = user_creds
+                await self._save_credentials()
+
+                return user_creds
+
+        except Exception as e:
+            self.logger.error("Failed to exchange code for credentials: %s", str(e))
+            raise
+
     async def close(self):
-        """Close authentication service and cleanup resources."""
+        """Clean up resources."""
         if self.api_client:
             await self.api_client.close()
             self.api_client = None
