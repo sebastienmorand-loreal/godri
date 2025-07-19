@@ -1,0 +1,38 @@
+{
+    "includeFormInResponse": false,
+    "requests": [
+        {
+            "moveItem": {
+                "originalLocation": {
+                    "index": 1
+                },
+                "newLocation": {
+                    "index": 9
+                }
+            }
+        },
+        {
+            "moveItem": {
+                "originalLocation": {
+                    "index": 1
+                },
+                "newLocation": {
+                    "index": 9
+                }
+            }
+        },
+        {
+            "moveItem": {
+                "originalLocation": {
+                    "index": 1
+                },
+                "newLocation": {
+                    "index": 9
+                }
+            }
+        }
+    ],
+    "writeControl": {
+        "requiredRevisionId": "00000085"
+    }
+}

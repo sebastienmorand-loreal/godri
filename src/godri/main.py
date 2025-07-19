@@ -6,6 +6,7 @@ import sys
 import logging
 import os
 from pathlib import Path
+import traceback
 from typing import Optional
 
 # Add the src directory to the path
@@ -13,7 +14,7 @@ current_dir = Path(__file__).parent
 src_dir = current_dir.parent
 sys.path.insert(0, str(src_dir))
 
-from godri.config.logging_config import setup_logging
+import godri.config.logging_config
 from godri.services.auth_service import AuthService
 from godri.services.drive_service import DriveService
 from godri.services.docs_service import DocsService
@@ -70,8 +71,17 @@ class GodriCLI:
                     os.remove(token_file)
                     print("Existing token deleted. Starting fresh authentication...")
 
-            await self.auth_service.authenticate()
-            print("Authentication successful!")
+            credentials = await self.auth_service.authenticate()
+
+            if getattr(args, "print", False):
+                # Print the OAuth2 token to stdout
+                if credentials and credentials.token:
+                    print(credentials.token)
+                else:
+                    print("No valid token available", file=sys.stderr)
+                    sys.exit(1)
+            else:
+                print("Authentication successful!")
         except Exception as e:
             self.logger.error("Authentication failed: %s", str(e))
             sys.exit(1)
@@ -261,6 +271,7 @@ class GodriCLI:
                 sys.exit(1)
         except Exception as e:
             self.logger.error("Forms operation failed: %s", str(e))
+            self.logger.debug("Traceback:\n%s", traceback.format_exc())
             sys.exit(1)
 
     async def handle_forms_read(self, args):
@@ -385,6 +396,27 @@ class GodriCLI:
         elif args.forms_write_command == "remove-section":
             response = self.forms_service.remove_section(args.form_id, args.section_index)
             print(f"Section {args.section_index} removed successfully")
+
+        elif args.forms_write_command == "move-question":
+            result = await self.forms_service.move_question(
+                args.form_id,
+                args.source_section_number,
+                args.source_question_number,
+                args.target_section_number,
+                args.target_question_number,
+                args.position,
+            )
+            print(
+                f"Question moved from Section {args.source_section_number}, Question {args.source_question_number} to Section {args.target_section_number}, Question {args.target_question_number} ({args.position}) successfully"
+            )
+
+        elif args.forms_write_command == "move-section":
+            result = await self.forms_service.move_section(
+                args.form_id, args.source_section_number, args.target_section_number, args.position
+            )
+            print(
+                f"Section {args.source_section_number} moved {args.position} Section {args.target_section_number} successfully"
+            )
 
     async def handle_forms_translate(self, args):
         """Handle forms translate commands."""
@@ -786,6 +818,12 @@ class GodriCLI:
             await self.handle_import_csv(args)
         elif args.sheets_command == "rename":
             await self.handle_rename_sheet(args)
+        elif args.sheets_command == "range-details":
+            await self.handle_range_details(args)
+        elif args.sheets_command == "copy-format":
+            await self.handle_copy_format(args)
+        elif args.sheets_command == "column-width":
+            await self.handle_column_width(args)
 
     async def handle_sheet_values(self, args):
         """Handle sheet values subcommands."""
@@ -926,6 +964,46 @@ class GodriCLI:
 
         except Exception as e:
             self.logger.error("Failed to rename sheet: %s", str(e))
+            sys.exit(1)
+
+    async def handle_range_details(self, args):
+        """Handle getting detailed range information."""
+        try:
+            result = await self.sheets_service.get_range_details(args.spreadsheet_id, args.range)
+            print(f"Range details for '{args.range}':")
+            import json
+
+            print(json.dumps(result, indent=2))
+
+        except Exception as e:
+            self.logger.error("Failed to get range details: %s", str(e))
+            sys.exit(1)
+
+    async def handle_copy_format(self, args):
+        """Handle copying format between ranges."""
+        try:
+            result = await self.sheets_service.copy_format(args.spreadsheet_id, args.source_range, args.target_range)
+            print(f"Format copied from '{args.source_range}' to '{args.target_range}' successfully")
+
+        except Exception as e:
+            self.logger.error("Failed to copy format: %s", str(e))
+            sys.exit(1)
+
+    async def handle_column_width(self, args):
+        """Handle setting column width."""
+        try:
+            result = await self.sheets_service.set_column_width(
+                args.spreadsheet_id, args.sheet_name, args.start_column, args.end_column, args.width
+            )
+            if args.start_column == args.end_column:
+                print(f"Column '{args.start_column}' width set to {args.width} pixels successfully")
+            else:
+                print(
+                    f"Columns '{args.start_column}' to '{args.end_column}' width set to {args.width} pixels successfully"
+                )
+
+        except Exception as e:
+            self.logger.error("Failed to set column width: %s", str(e))
             sys.exit(1)
 
     async def handle_slides_themes(self, args):
@@ -1280,6 +1358,7 @@ class GodriCLI:
         # AUTH command
         auth_parser = subparsers.add_parser("auth", help="Authenticate with Google APIs")
         auth_parser.add_argument("--force", action="store_true", help="Force re-authentication (delete existing token)")
+        auth_parser.add_argument("--print", action="store_true", help="Print renewed OAuth2 token to stdout")
 
         # DRIVE command with subcommands
         drive_parser = subparsers.add_parser("drive", help="Google Drive operations")
@@ -1533,6 +1612,27 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
         sheets_rename_parser.add_argument("spreadsheet_id", help="Spreadsheet ID")
         sheets_rename_parser.add_argument("sheet_name", help="Current sheet name")
         sheets_rename_parser.add_argument("new_name", help="New sheet name")
+
+        # sheets range-details
+        sheets_range_details_parser = sheets_subparsers.add_parser(
+            "range-details", help="Get detailed range information"
+        )
+        sheets_range_details_parser.add_argument("spreadsheet_id", help="Spreadsheet ID")
+        sheets_range_details_parser.add_argument("range", help="Range to analyze (e.g., 'A1:C3', 'Sheet1!B2:D4')")
+
+        # sheets copy-format
+        sheets_copy_format_parser = sheets_subparsers.add_parser("copy-format", help="Copy formatting between ranges")
+        sheets_copy_format_parser.add_argument("spreadsheet_id", help="Spreadsheet ID")
+        sheets_copy_format_parser.add_argument("source_range", help="Source range (e.g., 'A1:C3', 'Sheet1!A1:C3')")
+        sheets_copy_format_parser.add_argument("target_range", help="Target range (e.g., 'E1:G3', 'Sheet2!E1:G3')")
+
+        # sheets column-width
+        sheets_column_width_parser = sheets_subparsers.add_parser("column-width", help="Set column width")
+        sheets_column_width_parser.add_argument("spreadsheet_id", help="Spreadsheet ID")
+        sheets_column_width_parser.add_argument("sheet_name", help="Sheet name")
+        sheets_column_width_parser.add_argument("start_column", help="Starting column letter (e.g., 'A')")
+        sheets_column_width_parser.add_argument("end_column", help="Ending column letter (e.g., 'C')")
+        sheets_column_width_parser.add_argument("width", type=int, help="Width in pixels")
 
         # SLIDES command
         slides_parser = subparsers.add_parser("slides", help="Google Slides operations")
@@ -1805,6 +1905,26 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
         section_remove_parser.add_argument("form_id", help="Google Form ID")
         section_remove_parser.add_argument("section_index", type=int, help="Section number to remove (1-based)")
 
+        # Move question
+        question_move_parser = forms_write_subparsers.add_parser("move-question", help="Move a question")
+        question_move_parser.add_argument("form_id", help="Google Form ID")
+        question_move_parser.add_argument("source_section_number", type=int, help="Source section number (1-based)")
+        question_move_parser.add_argument("source_question_number", type=int, help="Source question number (1-based)")
+        question_move_parser.add_argument("target_section_number", type=int, help="Target section number (1-based)")
+        question_move_parser.add_argument("target_question_number", type=int, help="Target question number (1-based)")
+        question_move_parser.add_argument(
+            "position", choices=["before", "after"], default="before", help="Position relative to target"
+        )
+
+        # Move section
+        section_move_parser = forms_write_subparsers.add_parser("move-section", help="Move a section")
+        section_move_parser.add_argument("form_id", help="Google Form ID")
+        section_move_parser.add_argument("source_section_number", type=int, help="Source section number (1-based)")
+        section_move_parser.add_argument("target_section_number", type=int, help="Target section number (1-based)")
+        section_move_parser.add_argument(
+            "position", choices=["before", "after"], default="before", help="Position relative to target"
+        )
+
         # Forms translate operations
         forms_translate_parser = forms_subparsers.add_parser("translate", help="Translate form content")
         forms_translate_parser.add_argument("form_id", help="Google Form ID")
@@ -1865,14 +1985,12 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
 
 def main():
     """Main entry point for CLI."""
-    setup_logging()
     cli = GodriCLI()
     asyncio.run(cli.run())
 
 
 async def async_main():
     """Async main entry point."""
-    setup_logging()
     cli = GodriCLI()
     await cli.run()
 

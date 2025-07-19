@@ -699,7 +699,7 @@ class FormsService:
         self.logger.info("Question %d translated successfully", question_number)
         return result
 
-    def move_question(
+    async def move_question(
         self,
         form_id: str,
         source_section_number: int,
@@ -782,40 +782,95 @@ class FormsService:
         form = self.get_form(form_id)
         items = form.get("items", [])
 
-        # Get all questions with section information
-        all_questions = self.get_questions(form_id)
-
-        # Find section boundaries
-        section_items = []
-
+        # Use _calculate_index_location to find precise section boundaries
         if section_number == 1:
             # Default section: from start until first pageBreakItem
-            for item in items:
-                if "pageBreakItem" in item:
-                    break
-                section_items.append(item)
+            start_index = 0
+            end_index = self._calculate_index_location(form_id, section_number=1, position_in_section="end")
         else:
-            # Other sections: from the (section_number-1)th pageBreakItem until the next pageBreakItem or end
-            current_section = 1  # We start in section 1 (default section)
-            collecting = False
+            # Other sections: from pageBreakItem to end of section
+            start_index = self._calculate_index_location(
+                form_id, section_number=section_number, position_in_section="start"
+            )
+            end_index = self._calculate_index_location(
+                form_id, section_number=section_number, position_in_section="end"
+            )
 
-            for item in items:
-                if "pageBreakItem" in item:
-                    current_section += 1  # This pageBreakItem creates a new section
-                    if current_section == section_number:
-                        # This pageBreakItem starts our target section
-                        collecting = True
-                        section_items.append(item)
-                    elif collecting:
-                        # We've hit the next section break - stop collecting
-                        break
-                elif collecting:
-                    # We're in our target section, collect this item
-                    section_items.append(item)
+        # Extract items in this range
+        section_items = items[start_index:end_index]
+
+        self.logger.debug(
+            "Section %d items: start_index=%d, end_index=%d, item_count=%d",
+            section_number,
+            start_index,
+            end_index,
+            len(section_items),
+        )
 
         return section_items
 
-    def move_section(
+    def _get_section_item_indices(self, form_id: str, section_number: int) -> List[int]:
+        """Get indices of all items (section break + questions) that belong to a specific section.
+
+        Args:
+            form_id: Google Form ID
+            section_number: Section number (1-based)
+
+        Returns:
+            List of indices that belong to the section, including the section break itself
+        """
+        form = self.get_form(form_id)
+        items = form.get("items", [])
+
+        # Use _calculate_index_location to find precise section boundaries
+        if section_number == 1:
+            # Default section: from start until first pageBreakItem
+            start_index = 0
+            end_index = self._calculate_index_location(form_id, section_number=1, position_in_section="end")
+        else:
+            # Other sections: from pageBreakItem to end of section
+            start_index = self._calculate_index_location(
+                form_id, section_number=section_number, position_in_section="start"
+            )
+            end_index = self._calculate_index_location(
+                form_id, section_number=section_number, position_in_section="end"
+            )
+
+        # Return the range of indices
+        section_indices = list(range(start_index, end_index))
+
+        self.logger.debug(
+            "Section %d indices: start_index=%d, end_index=%d, indices=%s",
+            section_number,
+            start_index,
+            end_index,
+            section_indices,
+        )
+
+        return section_indices
+
+    def _get_sections_list(self, form_id: str) -> List[Dict[str, Any]]:
+        """Get list of all sections in the form."""
+        form = self.service.forms().get(formId=form_id).execute()
+        items = form.get("items", [])
+
+        sections = []
+        current_section = 1
+
+        # First section (Default) always exists
+        sections.append({"section_number": 1, "title": "Default Section"})
+
+        for item in items:
+            if "pageBreakItem" in item:
+                current_section += 1
+                page_break = item.get("pageBreakItem", {})
+                sections.append(
+                    {"section_number": current_section, "title": item.get("title", f"Section {current_section}")}
+                )
+
+        return sections
+
+    async def move_section(
         self,
         form_id: str,
         source_section_number: int,
@@ -835,106 +890,66 @@ class FormsService:
         Returns:
             Move operation response
         """
-        if source_section_number < 1 or target_section_number < 1:
-            raise ValueError("Section numbers must be 1-based (>= 1)")
+        # Get form structure
+        form = self.service.forms().get(formId=form_id).execute()
+        items = form.get("items", [])
 
-        if source_section_number == target_section_number:
-            raise ValueError("Cannot move a section to itself")
+        self.logger.debug("Form has %d items", len(items))
 
-        self.logger.info(
-            "Moving section %d %s section %d (including all questions)",
-            source_section_number,
-            position,
-            target_section_number,
+        # Get the indices of all items in the source section
+        source_section_index = (
+            self._calculate_index_location(form_id, source_section_number, position_in_section="start") - 1
         )
 
-        # Get form structure
-        form = self.get_form(form_id)
-        items = form.get("items", [])
-        all_questions = self.get_questions(form_id)
-        sections = [q for q in all_questions if q.get("is_section_break")]
+        # Get the items for the source section (actually we just need the number of items)
+        source_items = self._get_section_items(form_id, source_section_number)
 
-        if source_section_number == 1:
-            raise ValueError("Cannot move the default section (section 1)")
-
-        total_sections = len(sections) + 1  # +1 for default section
-        if source_section_number > total_sections or target_section_number > total_sections:
-            raise ValueError("Section number not found")
-
-        # Get all items that belong to the source section
-        source_section_items = self._get_section_items(form_id, source_section_number)
-        if not source_section_items:
-            raise ValueError(f"Source section {source_section_number} has no items")
-
-        # Find indices of all source section items
-        source_indices = []
-        for section_item in source_section_items:
-            item_id = section_item.get("itemId")
-            for i, form_item in enumerate(items):
-                if form_item.get("itemId") == item_id:
-                    source_indices.append(i)
-                    break
-
-        if not source_indices:
-            raise ValueError(f"Could not find items for source section {source_section_number}")
-
-        # Calculate target location
-        if target_section_number == 1:
-            # Position relative to default section (beginning of form)
-            if position == "before":
-                target_index = 0
+        # Calculate destination index
+        if position == "after":
+            if target_section_number == len(self._get_sections_list(form_id)):
+                # Moving after the last section
+                destination_index = len(items) - 1
             else:
-                # After default section - find end of default section
-                target_index = self._calculate_index_location(form_id, section_number=1, position_in_section="end")
-        else:
-            # Position relative to target section break
-            target_sections = [
-                s for s in sections if s.get("section_info", {}).get("index") == target_section_number - 1
-            ]
-            if not target_sections:
-                raise ValueError(f"Target section {target_section_number} not found")
-
-            target_item_id = target_sections[0]["item_id"]
-            target_section_index = next((i for i, item in enumerate(items) if item.get("itemId") == target_item_id), 0)
-
-            if position == "before":
-                target_index = target_section_index
+                # Moving after target section but not the last one - go before the next section
+                next_section_number = target_section_number + 1
+                destination_index = self._calculate_index_location(form_id, next_section_number, position="start") - 1
+        else:  # position == "before"
+            if target_section_number == 1:
+                # Moving before first section
+                destination_index = 0
             else:
-                target_index = self._calculate_index_location(
-                    form_id, section_number=target_section_number, position_in_section="end"
+                # Moving before target section
+                destination_index = (
+                    self._calculate_index_location(form_id, target_section_number, position_in_section="start") - 1
                 )
 
+        self.logger.debug("Source section index: %s", source_section_index)
+        self.logger.debug("Destination index: %d", destination_index)
+        print("Source section index: %s", source_section_index)
+        print("Destination index: %d", destination_index)
+
         # Create move requests for all items in the section
-        # We need to move items in reverse order to maintain relative positions
-        # and adjust indices as we move items
         requests = []
-        source_indices.sort(reverse=True)  # Start from the last item
 
-        for i, source_index in enumerate(source_indices):
-            # Calculate adjusted target index
-            # Items before the target position that we've already moved affect the target index
-            adjusted_target_index = target_index
-            if target_index > source_index:
-                # Target is after source, so we need to account for items we've moved
-                adjusted_target_index = target_index - i
-            else:
-                # Target is before source, so moved items will be inserted before target
-                adjusted_target_index = target_index + len(source_indices) - 1 - i
-
-            request = {
-                "moveItem": {
-                    "originalLocation": {"index": source_index},
-                    "newLocation": {"index": adjusted_target_index},
+        # Move items one by one to the destination
+        # After moving the first item, subsequent items shift down, so they all use the same original index
+        for _ in range(len(source_items) + 1):
+            # Use the first item's index for all moves since items shift after each move
+            requests.append(
+                {
+                    "moveItem": {
+                        "originalLocation": {"index": source_section_index},
+                        "newLocation": {"index": destination_index},
+                    }
                 }
-            }
-            requests.append(request)
+            )
+
+        self.logger.debug("Move requests: %s", requests)
 
         # Execute batch update
         batch_request = {"requests": requests}
-        response = self.service.forms().batchUpdate(formId=form_id, body=batch_request).execute()
-
-        self.logger.info("Section %d moved successfully with %d items", source_section_number, len(source_indices))
-        return response
+        print(batch_request)
+        return self.service.forms().batchUpdate(formId=form_id, body=batch_request).execute()
 
     def _process_form_structure(self, form: Dict[str, Any]) -> Dict[str, Any]:
         """Process raw form data into organized structure."""

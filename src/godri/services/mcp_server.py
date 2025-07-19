@@ -1748,7 +1748,7 @@ async def forms_move_section(
     await initialize_services()
 
     try:
-        forms_service.move_section(
+        await forms_service.move_section(
             form_id,
             source_section_number,
             target_section_number,
@@ -1759,3 +1759,139 @@ async def forms_move_section(
 
     except Exception as e:
         return f"❌ Error moving section: {str(e)}"
+
+
+@mcp.tool(name="slides_content_remove")
+async def slides_content_remove(presentation_id: str, slide_id: str, element_id: str) -> str:
+    """Remove content element from a slide by its ID.
+
+    Args:
+        presentation_id: Google Slides presentation ID
+        slide_id: Slide ID containing the element
+        element_id: Element ID to remove
+
+    Returns:
+        Success message
+    """
+    await initialize_services()
+
+    try:
+        result = slides_service.remove_content_element(presentation_id, slide_id, element_id)
+        return f"✅ Content element {element_id} removed from slide {slide_id} successfully"
+
+    except Exception as e:
+        return f"❌ Error removing content element: {str(e)}"
+
+
+@mcp.tool(name="slides_content_move")
+async def slides_content_move(presentation_id: str, slide_id: str, element_id: str, x: float, y: float) -> str:
+    """Move content element to new position on slide.
+
+    Args:
+        presentation_id: Google Slides presentation ID
+        slide_id: Slide ID containing the element
+        element_id: Element ID to move
+        x: New X position in presentation units
+        y: New Y position in presentation units
+
+    Returns:
+        Success message
+    """
+    await initialize_services()
+
+    try:
+        result = slides_service.move_content_element(presentation_id, slide_id, element_id, x, y)
+        return f"✅ Content element {element_id} moved to position ({x}, {y}) successfully"
+
+    except Exception as e:
+        return f"❌ Error moving content element: {str(e)}"
+
+
+@mcp.tool(name="slides_themes_import")
+async def slides_themes_import(presentation_id: str, template_id: str, set_theme: bool = False) -> str:
+    """Import theme from another presentation.
+
+    Args:
+        presentation_id: Target presentation ID
+        template_id: Source presentation ID with theme to import
+        set_theme: Whether to automatically apply the imported theme
+
+    Returns:
+        Success message
+    """
+    await initialize_services()
+
+    try:
+        result = slides_service.import_theme(presentation_id, template_id, set_theme)
+        message = f"✅ Theme imported from presentation {template_id} successfully"
+        if set_theme:
+            message += " and applied to presentation"
+        return message
+
+    except Exception as e:
+        return f"❌ Error importing theme: {str(e)}"
+
+
+@mcp.tool(name="slides_themes_set")
+async def slides_themes_set(presentation_id: str, theme_name: str) -> str:
+    """Set theme for presentation.
+
+    Args:
+        presentation_id: Presentation ID
+        theme_name: Theme name (SIMPLE_LIGHT, SIMPLE_DARK, STREAMLINE, FOCUS, etc.)
+
+    Returns:
+        Success message
+    """
+    await initialize_services()
+
+    try:
+        result = slides_service.set_theme(presentation_id, theme_name)
+        return f"✅ Theme '{theme_name}' applied to presentation {presentation_id} successfully"
+
+    except Exception as e:
+        return f"❌ Error setting theme: {str(e)}"
+
+
+@mcp.tool(name="slides_layout_list")
+async def slides_layout_list(presentation_id: str) -> str:
+    """List available layouts for a presentation.
+
+    Args:
+        presentation_id: Presentation ID
+
+    Returns:
+        JSON formatted list of available layouts
+    """
+    await initialize_services()
+
+    try:
+        layouts = slides_service.list_layouts(presentation_id)
+        import json
+
+        return json.dumps({"layouts": layouts}, indent=2)
+
+    except Exception as e:
+        return f"❌ Error listing layouts: {str(e)}"
+
+
+@mcp.tool(name="slides_move")
+async def slides_move(presentation_id: str, slide_id: str, new_position: int) -> str:
+    """Move slide to new position in presentation.
+
+    Args:
+        presentation_id: Presentation ID
+        slide_id: Slide ID to move
+        new_position: New position (0-based index)
+
+    Returns:
+        Success message
+    """
+    await initialize_services()
+
+    try:
+        result = slides_service.move_slide(presentation_id, slide_id, new_position)
+        return f"✅ Slide moved to position {new_position} successfully"
+
+    except Exception as e:
+        return f"❌ Error moving slide: {str(e)}"

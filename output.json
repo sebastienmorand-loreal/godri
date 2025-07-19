@@ -1,0 +1,173 @@
+{
+  "formId": "1nqeMn4J6fWNR1EZZ5DAGyC0U1Si-wcca-WNCc5BuT0c",
+  "info": {
+    "title": "Test Questionnaire",
+    "description": "Alpha",
+    "documentTitle": "Copy of Questionnaire survey on Interventional Pulmonology in Africa"
+  },
+  "settings": {
+    "emailCollectionType": "DO_NOT_COLLECT"
+  },
+  "revisionId": "00000085",
+  "responderUri": "https://docs.google.com/forms/d/e/1FAIpQLScMGyZ4SUfz-GON_4mC9Rq1D4qm0W4--hrNhvgTwMFiE92kmw/viewform",
+  "items": [
+    {
+      "itemId": "7537ba5f",
+      "title": "A1",
+      "questionItem": {
+        "question": {
+          "questionId": "2c26598f",
+          "choiceQuestion": {
+            "type": "RADIO",
+            "options": [
+              {
+                "value": "Yes"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "itemId": "5394e3c1",
+      "pageBreakItem": {},
+      "title": "Beta"
+    },
+    {
+      "itemId": "4d18761d",
+      "title": "B1",
+      "questionItem": {
+        "question": {
+          "questionId": "3b15079d",
+          "choiceQuestion": {
+            "type": "RADIO",
+            "options": [
+              {
+                "value": "Option 1"
+              },
+              {
+                "value": "Option 2"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "itemId": "2f570f80",
+      "title": "B2",
+      "questionItem": {
+        "question": {
+          "questionId": "279a7ebe",
+          "choiceQuestion": {
+            "type": "RADIO",
+            "options": [
+              {
+                "value": "Option 1"
+              },
+              {
+                "value": "Option 2"
+              },
+              {
+                "value": "Option 3"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "itemId": "40b5ee2c",
+      "pageBreakItem": {},
+      "title": "Gamma"
+    },
+    {
+      "itemId": "6ac0b33a",
+      "title": "G1",
+      "questionItem": {
+        "question": {
+          "questionId": "0c761d37",
+          "textQuestion": {}
+        }
+      }
+    },
+    {
+      "itemId": "5c8395f9",
+      "title": "G2",
+      "questionItem": {
+        "question": {
+          "questionId": "1d9b1a50",
+          "choiceQuestion": {
+            "type": "CHECKBOX",
+            "options": [
+              {
+                "value": "Option 1"
+              },
+              {
+                "value": "Option 2"
+              },
+              {
+                "value": "Option 3"
+              },
+              {
+                "value": "Option 4"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "itemId": "0fc09258",
+      "title": "G3",
+      "questionItem": {
+        "question": {
+          "questionId": "5a35f909",
+          "choiceQuestion": {
+            "type": "DROP_DOWN",
+            "options": [
+              {
+                "value": "Option 1"
+              },
+              {
+                "value": "Option 2"
+              },
+              {
+                "value": "Option 3"
+              },
+              {
+                "value": "Option 4"
+              },
+              {
+                "value": "Option 5"
+              },
+              {
+                "value": "Option 6"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "itemId": "1b2ec527",
+      "pageBreakItem": {},
+      "title": "Delta"
+    },
+    {
+      "itemId": "3cfe7d32",
+      "title": "D1",
+      "questionItem": {
+        "question": {
+          "questionId": "621d450a",
+          "textQuestion": {
+            "paragraph": true
+          }
+        }
+      }
+    }
+  ],
+  "publishSettings": {
+    "publishState": {}
+  }
+}
