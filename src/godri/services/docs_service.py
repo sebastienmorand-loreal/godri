@@ -1,51 +1,54 @@
-"""Google Docs service wrapper."""
+"""Google Docs service wrapper using aiogoogle."""
 
 import logging
 import re
 from typing import Dict, Any, List, Optional, Tuple
 from .auth_service import AuthService
+from ..commons.api.docs_api import DocsApiClient
+from ..commons.api.drive_api import DriveApiClient
 
 
 class DocsService:
-    """Google Docs operations."""
+    """Google Docs operations using aiogoogle."""
 
     def __init__(self, auth_service: AuthService):
         self.auth_service = auth_service
         self.logger = logging.getLogger(__name__)
-        self.service = None
-        self.drive_service = None
+        self.docs_api = None
+        self.drive_api = None
 
     async def initialize(self):
         """Initialize the Docs service."""
         await self.auth_service.authenticate()
-        self.service = self.auth_service.get_service("docs", "v1")
-        self.drive_service = self.auth_service.get_service("drive", "v3")
+        api_client = await self.auth_service.get_api_client()
+        self.docs_api = DocsApiClient(api_client)
+        self.drive_api = DriveApiClient(api_client)
         self.logger.info("Docs service initialized")
 
-    def create_document(self, title: str, folder_id: Optional[str] = None) -> Dict[str, Any]:
+    async def create_document(self, title: str, folder_id: Optional[str] = None) -> Dict[str, Any]:
         """Create a new Google Doc."""
         self.logger.info("Creating document: %s", title)
 
-        document = self.service.documents().create(body={"title": title}).execute()
+        document = await self.docs_api.create_document(title)
         document_id = document.get("documentId")
 
         if folder_id:
-            self.drive_service.files().update(fileId=document_id, addParents=folder_id, fields="id, parents").execute()
+            await self.drive_api.move_file(document_id, folder_id)
             self.logger.info("Document moved to folder: %s", folder_id)
 
         self.logger.info("Document created successfully: %s", document_id)
         return document
 
-    def get_document(self, document_id: str) -> Dict[str, Any]:
+    async def get_document(self, document_id: str) -> Dict[str, Any]:
         """Get document content."""
         self.logger.info("Getting document: %s", document_id)
 
-        document = self.service.documents().get(documentId=document_id).execute()
+        document = await self.docs_api.get_document(document_id)
         return document
 
-    def get_document_text(self, document_id: str) -> str:
+    async def get_document_text(self, document_id: str) -> str:
         """Extract plain text from document."""
-        document = self.get_document(document_id)
+        document = await self.get_document(document_id)
         content = document.get("body", {}).get("content", [])
 
         text_parts = []
