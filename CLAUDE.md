@@ -2,58 +2,111 @@
 
 ## Project Overview
 
-Godri is a comprehensive Python CLI tool for Google Drive and Google Workspace operations with hierarchical command structure and MCP (Model Context Protocol) server integration. It provides complete functionality for Google Drive, Docs, Sheets, Slides, Forms, and Translation services.
+Godri is a comprehensive Python CLI tool for Google Drive and Google Workspace operations with modern typer-based hierarchical command structure, async architecture, and modular MCP (Model Context Protocol) server integration. It provides complete functionality for Google Drive, Docs, Sheets, Slides, Forms, Translation, and Speech services.
 
 ## Architecture
 
 ### Core Components
 
-- **CLI Entry Point**: `src/godri/main.py` - Main application with argparse-based hierarchical command structure
-- **Authentication**: `src/godri/services/auth_service.py` - OAuth2 flow with persistent token storage
-- **Service Layer**: Individual service classes for each Google API
-- **MCP Server**: `src/godri/services/mcp_server.py` - FastMCP integration for AI assistant access
+- **CLI Entry Point**: `src/godri/main.py` - Typer-based hierarchical command structure with rich console output
+- **CLI Commands**: `src/godri/cli/` - Modular command structure (auth, drive, docs, mcp, translate)
+- **API Wrappers**: `src/godri/commons/api/` - Async aiohttp-based Google API clients
+- **Utilities**: `src/godri/commons/utils/` - Caching, helpers, range parsing, color conversion
+- **MCP Server**: `src/godri/mcpservers/` - Modular FastMCP server with separated tool modules
+- **Authentication**: `src/godri/services/auth_service_new.py` - Async OAuth2 flow with persistent token storage
 
 ### Service Architecture
 
 ```
-GodriCLI (main.py)
-├── AuthService (auth_service.py) - OAuth2 authentication
-├── DriveService (drive_service.py) - File operations, smart download
-├── DocsService (docs_service.py) - Document CRUD, markdown support
-├── SheetsService (sheets_service.py) - Spreadsheet operations, formatting
-├── SlidesService (slides_service.py) - Presentation operations, content management
-├── FormsService (forms_service.py) - Forms CRUD operations, 1-based numbering
-└── TranslateService (translate_service.py) - Text translation
+GodriCLI (main.py) - Typer-based CLI
+├── cli/                           # Modular CLI commands
+│   ├── auth.py                   # Authentication commands
+│   ├── drive.py                  # Drive operations
+│   ├── docs.py                   # Document operations
+│   ├── mcp.py                    # MCP server commands
+│   └── translate.py              # Translation commands
+├── commons/                       # Shared utilities and API wrappers
+│   ├── api/                      # Async API clients
+│   │   ├── google_api_client.py  # Base aiohttp Google API client
+│   │   ├── drive_api.py          # Drive API wrapper
+│   │   ├── docs_api.py           # Docs API wrapper
+│   │   ├── sheets_api.py         # Sheets API wrapper
+│   │   ├── slides_api.py         # Slides API wrapper
+│   │   ├── forms_api.py          # Forms API wrapper
+│   │   ├── translate_api.py      # Translation API wrapper
+│   │   └── speech_api.py         # Speech API wrapper
+│   └── utils/                    # Utilities and helpers
+│       ├── cache.py              # Async TTL caching
+│       ├── color_converter.py    # Color conversion utilities
+│       ├── file_helpers.py       # File operation helpers
+│       └── range_parser.py       # Range parsing logic
+├── mcpservers/                    # Modular MCP server
+│   ├── main_server.py            # Main MCP server entry point
+│   ├── base_tools.py             # Abstract base class for tools
+│   ├── drive_tools.py            # Drive MCP tools
+│   ├── docs_tools.py             # Docs MCP tools
+│   ├── sheets_tools.py           # Sheets MCP tools
+│   ├── slides_tools.py           # Slides MCP tools
+│   ├── forms_tools.py            # Forms MCP tools
+│   ├── translate_tools.py        # Translation MCP tools
+│   └── speech_tools.py           # Speech MCP tools
+└── services/                      # Legacy/authentication services
+    ├── auth_service_new.py       # New async authentication
+    └── auth_service.py           # Legacy authentication (deprecated)
 ```
 
 ### Dependency Injection Pattern
 
-All services follow the same dependency injection pattern:
-- Services instantiated in `main.py:initialize_services()` 
-- AuthService passed to all other services in constructor
-- All services have async `initialize()` method
+The new architecture follows async dependency injection:
+- **CLI**: Services instantiated per command with async initialization
+- **MCP Server**: Global service instances with lazy loading in `mcpservers/main_server.py`
+- **API Clients**: All async with aiohttp, injected into tool modules
+- **Caching**: Async cache with TTL support reduces API call redundancy
+- **Authentication**: Async OAuth2 service with automatic token refresh
 
 ## Key Features Implemented
+
+### Async Architecture
+- **aiohttp Integration**: All Google API clients use aiohttp for optimal performance
+- **Connection Pooling**: Efficient session management and connection reuse
+- **Non-blocking Operations**: Full async/await pattern throughout the codebase
+- **Concurrent Processing**: Batch operations with proper concurrency control
+
+### Advanced Caching System
+- **TTL-based Caching**: Configurable time-to-live for different API operations
+- **Per-key Locking**: Prevents cache stampedes with async locking mechanisms
+- **Memory Efficient**: Automatic cleanup of expired cache entries
+- **Redundancy Reduction**: Significantly reduces Google API quota usage
+
+### Modular Architecture
+- **Separated Concerns**: CLI, API wrappers, utilities, and MCP tools in dedicated modules
+- **Abstract Base Classes**: Consistent tool implementation with BaseTools pattern
+- **Typer CLI**: Modern CLI framework with rich console output and command hierarchy
+- **Tool Modularity**: MCP server split into focused tool modules by service area
 
 ### Range Support System
 - **Slides**: Range parsing for slide operations (1-3, 1,3,5, 2-4,6-8)
 - **Download**: Slide range downloads in multiple formats
 - **Copy**: Range-based slide copying between presentations
+- **Utility Module**: Centralized range parsing logic in `commons/utils/range_parser.py`
 
 ### Copy Functionality
 - **Slides Copy**: Copy slides between presentations with theme preservation and source linking
 - **Sheets Copy**: Copy sheets between spreadsheets with format preservation and collision handling
 - **Batch Operations**: Multiple slide/sheet copying with detailed error reporting
+- **Async Processing**: Non-blocking copy operations for better performance
 
 ### Content Management
 - **Slides Content**: Comprehensive content listing with formatting details, position, size
 - **Text Formatting**: Rich text formatting support similar to Google Sheets
 - **Element Management**: Add/remove/move content elements on slides
+- **Color Utilities**: Advanced color conversion and management in `commons/utils/color_converter.py`
 
 ### Translation Integration
 - **Document Translation**: Preserves formatting while translating content
 - **Sheet Translation**: Range-based translation with formula preservation
 - **Smart Detection**: Automatically skips non-translatable content
+- **Forms Translation**: Translate questions and options while preserving structure
 
 ### Forms Management System
 - **Complete CRUD Operations**: Full create, read, update, delete for forms, sections, and questions
@@ -64,6 +117,12 @@ All services follow the same dependency injection pattern:
 - **Translation Support**: Translate questions and answer options while preserving form structure
 - **Positioning Control**: Insert sections and questions at specific positions (before/after/end)
 
+### Speech Processing
+- **Audio Transcription**: Google Speech-to-Text API integration with multiple format support
+- **Format Detection**: Automatic audio format detection with mutagen library
+- **Language Support**: Multi-language transcription with auto-detection capabilities
+- **Async Processing**: Non-blocking audio processing for large files
+
 ## Development Standards
 
 ### Code Formatting
@@ -73,28 +132,74 @@ All services follow the same dependency injection pattern:
 ```
 godri/
 ├── src/godri/
-│   ├── main.py                 # CLI entry point with hierarchical commands
+│   ├── main.py                   # Typer-based CLI entry point
+│   ├── cli/                      # Modular CLI commands
+│   │   ├── __init__.py
+│   │   ├── auth.py              # Authentication commands
+│   │   ├── drive.py             # Drive operations
+│   │   ├── docs.py              # Docs operations
+│   │   ├── mcp.py               # MCP server commands
+│   │   └── translate.py         # Translation commands
+│   ├── commons/                  # Shared utilities and API wrappers
+│   │   ├── __init__.py
+│   │   ├── api/                 # Async API clients using aiohttp
+│   │   │   ├── __init__.py
+│   │   │   ├── google_api_client.py # Base Google API client
+│   │   │   ├── drive_api.py     # Drive API wrapper
+│   │   │   ├── docs_api.py      # Docs API wrapper
+│   │   │   ├── sheets_api.py    # Sheets API wrapper
+│   │   │   ├── slides_api.py    # Slides API wrapper
+│   │   │   ├── forms_api.py     # Forms API wrapper
+│   │   │   ├── translate_api.py # Translate API wrapper
+│   │   │   └── speech_api.py    # Speech API wrapper
+│   │   ├── utils/               # Utility classes and helpers
+│   │   │   ├── __init__.py
+│   │   │   ├── cache.py         # Async caching system
+│   │   │   ├── color_converter.py # Color conversion utilities
+│   │   │   ├── file_helpers.py  # File operation helpers
+│   │   │   └── range_parser.py  # Range parsing for slides/sheets
+│   │   └── models/              # Data models and schemas
+│   │       └── __init__.py
+│   ├── mcpservers/              # Modular MCP server components
+│   │   ├── __init__.py
+│   │   ├── main_server.py       # Main MCP server entry point
+│   │   ├── base_tools.py        # Abstract base class for tools
+│   │   ├── drive_tools.py       # Drive MCP tools
+│   │   ├── docs_tools.py        # Docs MCP tools
+│   │   ├── sheets_tools.py      # Sheets MCP tools
+│   │   ├── slides_tools.py      # Slides MCP tools
+│   │   ├── forms_tools.py       # Forms MCP tools
+│   │   ├── translate_tools.py   # Translation MCP tools
+│   │   └── speech_tools.py      # Speech MCP tools
+│   ├── services/                # Legacy service layer (being migrated)
+│   │   ├── __init__.py
+│   │   ├── auth_service_new.py  # New async authentication service
+│   │   └── auth_service.py      # Legacy authentication (deprecated)
 │   ├── config/
-│   │   └── logging_config.py   # Logging configuration
-│   └── services/
-│       ├── auth_service.py     # OAuth2 authentication
-│       ├── drive_service.py    # Google Drive operations
-│       ├── docs_service.py     # Google Docs with markdown support
-│       ├── sheets_service.py   # Google Sheets comprehensive operations
-│       ├── slides_service.py   # Google Slides comprehensive operations
-│       ├── forms_service.py    # Google Forms comprehensive operations
-│       ├── translate_service.py # Translation service
-│       └── mcp_server.py       # MCP server implementation
-├── pyproject.toml              # UV dependency configuration
-├── uv.lock                     # UV lock file
-└── README.md                   # Comprehensive documentation
+│   │   ├── __init__.py
+│   │   └── logging_config.py    # Centralized logging configuration
+│   └── e2e_tests/               # End-to-end test suite
+│       ├── __init__.py
+│       ├── test_file_operations.py # File create/read/upload/download tests
+│       └── test_integration.py  # Integration tests
+├── pyproject.toml               # UV dependency configuration
+├── uv.lock                      # UV lock file
+├── README.md                    # Comprehensive documentation
+└── CLAUDE.md                    # This file
 ```
 
 ### Dependencies Management
 - **Package Manager**: UV (`uv run pip install -e .`, `uv add`, `uv sync` for development)
 - **Installation**: `uv run pip install -e .` (installs `godri` command globally in development mode)
 - **Python Version**: 3.11+
-- **Key Dependencies**: google-api-python-client, mcp, fastapi, aiofiles, aiohttp
+- **Key Dependencies**: 
+  - **CLI**: typer, rich (modern CLI with beautiful output)
+  - **Async**: aiohttp, aiofiles (async HTTP client and file operations)
+  - **Google APIs**: google-api-python-client, google-auth-httplib2, google-auth-oauthlib
+  - **Translation**: google-cloud-translate
+  - **Speech**: google-cloud-speech, mutagen (audio format detection)
+  - **MCP**: mcp, fastapi, uvicorn, starlette (Model Context Protocol server)
+  - **Development**: black, bandit, pytest
 
 ## Common Commands
 
@@ -120,19 +225,31 @@ uv run src/godri/main.py auth        # Direct from source
 godri mcp stdio                      # After install
 # OR
 uv run src/godri/main.py mcp stdio   # Direct from source
+
+# Run security scan
+bandit -r src/
+
+# Run end-to-end tests
+uv run src/godri/e2e_tests/test_file_operations.py
 ```
 
-### Testing Copy Features
+### Testing New Architecture
 ```bash
-# After install (recommended)
-godri slides copy SOURCE_ID TARGET_ID "1-3,5"
-godri sheets copy SOURCE_ID TARGET_ID "Sheet1" "Sheet2"
-godri slides content list PRESENTATION_ID "1-3" --detailed
+# Test typer CLI structure
+godri --help                         # Show available commands
+godri auth --help                    # Authentication options
+godri drive --help                   # Drive operations
+godri docs --help                    # Document operations
+godri translate --help               # Translation options
+godri mcp --help                     # MCP server options
 
-# OR direct from source (for local testing)
-uv run src/godri/main.py slides copy SOURCE_ID TARGET_ID "1-3,5"
-uv run src/godri/main.py sheets copy SOURCE_ID TARGET_ID "Sheet1" "Sheet2"
-uv run src/godri/main.py slides content list PRESENTATION_ID "1-3" --detailed
+# Test async operations
+godri drive search --name "test" --limit 5
+godri docs create-document "Test Doc" --content "Test content"
+godri translate "Hello world" "fr"
+
+# Test MCP server modular architecture
+godri mcp stdio                      # Start modular MCP server
 ```
 
 ## Authentication Setup
@@ -149,27 +266,45 @@ export GODRI_CLIENT_FILE="/path/to/client_secret.json"
 
 ## Key Implementation Details
 
-### Range Parsing (`slides_service.py`)
-- `_parse_slide_range()`: Converts range strings to slide numbers
-- `_expand_slide_identifiers()`: Maps user numbers to API object IDs
-- Supports: "1-3", "1,3,5", "2-4,6-8" formats
+### Async Architecture Implementation
+- **GoogleApiClient**: Base aiohttp client with session management and token refresh
+- **Connection Pooling**: Efficient HTTP connection reuse across all API calls
+- **Async Context Managers**: Proper resource cleanup with async context managers
+- **Error Handling**: Comprehensive async error handling with retry logic
 
-### Copy Implementation
-- **Slides**: Uses Google Slides API with theme import/export
-- **Sheets**: Uses Google Sheets copyTo API with batch operations
-- **Error Handling**: Comprehensive error reporting for batch operations
+### Caching System (`commons/utils/cache.py`)
+- **AsyncCache**: TTL-based caching with per-key async locking
+- **Memory Management**: Automatic cleanup of expired entries
+- **Cache Keys**: Intelligent key generation for different API operations
+- **Performance**: Significantly reduces API quota usage and improves response times
 
-### MCP Server (`mcp_server.py`)
-- **FastMCP Integration**: Uses FastMCP framework
-- **Service Initialization**: Lazy loading with global service instances
-- **Tool Documentation**: Comprehensive docstrings for all MCP tools
+### Range Parsing (`commons/utils/range_parser.py`)
+- **Centralized Logic**: Unified range parsing for slides and sheets operations
+- **Format Support**: "1-3", "1,3,5", "2-4,6-8" formats with validation
+- **Error Handling**: Comprehensive validation with user-friendly error messages
+- **Async Ready**: Designed for async operations and batch processing
+
+### MCP Server Architecture (`mcpservers/`)
+- **Modular Design**: Separated tool modules by service area (drive, docs, sheets, etc.)
+- **BaseTools**: Abstract base class ensuring consistent tool implementation
+- **FastMCP Integration**: Uses FastMCP framework with proper async handling
+- **Service Initialization**: Lazy loading with global service instances and proper cleanup
+- **Tool Documentation**: Comprehensive docstrings for all 40+ MCP tools
 - **Structured Data**: List[List] support for sheets values operations
-- **Complete Formatting**: Full parity with CLI formatting capabilities (format_range, copy_format, set_column_width)
+- **Complete Formatting**: Full parity with CLI formatting capabilities
 
-### CLI Command Structure (`main.py`)
-- **Hierarchical Commands**: drive, docs, sheets, slides, translate, mcp
-- **Subcommand Handlers**: Pattern-based handler methods
-- **Argument Parsing**: Comprehensive argparse configuration
+### CLI Architecture (`main.py` + `cli/`)
+- **Typer Framework**: Modern CLI with rich console output and auto-completion
+- **Modular Commands**: Separated command modules for better maintainability
+- **Rich Output**: Colored console output with progress indicators
+- **Error Handling**: Consistent error handling with user-friendly messages
+- **Async Integration**: Proper async command handling with typer
+
+### Color Conversion (`commons/utils/color_converter.py`)
+- **Multiple Formats**: Support for hex, RGB, HSL, and Google API color formats
+- **Validation**: Comprehensive color format validation
+- **Conversion**: Seamless conversion between different color representations
+- **Google API**: Proper formatting for Google Sheets and Slides color APIs
 
 ## File-Specific Guidelines
 
@@ -249,11 +384,37 @@ export GODRI_CLIENT_FILE="/path/to/client_secret.json"
 ## Git Workflow
 
 ```bash
-# After making changes
-black -l 120 src/
+# After making changes (MANDATORY)
+black -l 120 src/           # Format code
+bandit -r src/              # Security scan
+uv run src/godri/e2e_tests/test_file_operations.py  # Run tests
 git add .
-git commit -m "Descriptive commit message"
+git commit -m "[STRYxxxxxxx](type) Descriptive commit message"
 ```
+
+## Migration Status
+
+### Completed
+- ✅ Typer-based CLI architecture
+- ✅ Async API clients with aiohttp
+- ✅ Advanced caching system with TTL support
+- ✅ Modular MCP server architecture
+- ✅ Utility modules (cache, color converter, file helpers, range parser)
+- ✅ End-to-end test framework
+- ✅ New authentication service
+- ✅ Project structure reorganization
+
+### In Progress
+- 🔄 CLI commands migration: auth, drive, docs, mcp, translate (completed)
+- 🔄 CLI commands migration: sheets, slides, forms, speech (pending)
+- 🔄 Documentation updates (README.md, CLAUDE.md)
+
+### Next Steps
+1. Complete remaining CLI command migrations
+2. Enhance end-to-end test coverage
+3. Optimize caching strategies for specific operations
+4. Add comprehensive error handling and user guidance
+5. Performance testing and optimization
 
 ## Future Development Guidelines
 

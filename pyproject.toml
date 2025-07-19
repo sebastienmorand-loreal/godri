@@ -19,6 +19,7 @@ dependencies = [
     "fastapi>=0.116.1",
     "google-cloud-speech>=2.33.0",
     "mutagen>=1.47.0",
+    "typer>=0.16.0",
 ]
 
 [project.scripts]
@@ -34,5 +35,6 @@ packages = ["src/godri"]
 [tool.uv]
 dev-dependencies = [
     "pytest>=7.0.0",
-    "black>=23.0.0"
+    "black>=23.0.0",
+    "bandit>=1.8.6",
 ]
