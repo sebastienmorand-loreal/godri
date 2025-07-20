@@ -29,7 +29,7 @@ class SlidesService:
         self.drive_api = DriveApiClient(api_client)
         self.logger.info("Slides service initialized")
 
-    def create_presentation(
+    async def create_presentation(
         self, title: str, folder_id: Optional[str] = None, theme: str = "STREAMLINE"
     ) -> Dict[str, Any]:
         """Create a new Google Slides presentation with specified theme.
@@ -63,61 +63,44 @@ class SlidesService:
 
         presentation_body = {"title": title}
 
-        presentation = self.service.presentations().create(body=presentation_body).execute()
+        presentation = await self.slides_api.create_presentation(title, folder_id, theme)
         presentation_id = presentation.get("presentationId")
-
-        if folder_id:
-            self.drive_service.files().update(
-                fileId=presentation_id, addParents=folder_id, fields="id, parents"
-            ).execute()
-            self.logger.info("Presentation moved to folder: %s", folder_id)
 
         # Apply the specified theme
         if theme != "SIMPLE_LIGHT":  # SIMPLE_LIGHT is the default
-            self.set_theme(presentation_id, theme)
+            await self.set_theme(presentation_id, theme)
 
         self.logger.info("Presentation created successfully: %s", presentation_id)
         return presentation
 
-    def get_presentation(self, presentation_id: str) -> Dict[str, Any]:
+    async def get_presentation(self, presentation_id: str) -> Dict[str, Any]:
         """Get presentation details."""
         self.logger.info("Getting presentation: %s", presentation_id)
 
-        presentation = self.service.presentations().get(presentationId=presentation_id).execute()
-
+        presentation = await self.slides_api.get_presentation(presentation_id)
         return presentation
 
-    def create_slide(self, presentation_id: str, layout: str = "BLANK") -> Dict[str, Any]:
+    async def create_slide(self, presentation_id: str, layout: str = "BLANK") -> Dict[str, Any]:
         """Add a new slide to presentation."""
         self.logger.info("Creating slide in presentation: %s", presentation_id)
 
-        requests = [{"createSlide": {"slideLayoutReference": {"predefinedLayout": layout}}}]
-
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.create_slide(presentation_id, layout)
 
         self.logger.info("Slide created successfully")
         return result
 
-    def delete_slide(self, presentation_id: str, slide_id: str) -> Dict[str, Any]:
+    async def delete_slide(self, presentation_id: str, slide_id: str) -> Dict[str, Any]:
         """Delete a slide from presentation."""
         self.logger.info("Deleting slide %s from presentation: %s", slide_id, presentation_id)
 
         requests = [{"deleteObject": {"objectId": slide_id}}]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Slide deleted successfully")
         return result
 
-    def add_text_box(
+    async def add_text_box(
         self,
         presentation_id: str,
         slide_id: str,
@@ -150,16 +133,12 @@ class SlidesService:
             {"insertText": {"objectId": element_id, "text": text}},
         ]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Text box added successfully")
         return result
 
-    def replace_text(self, presentation_id: str, old_text: str, new_text: str) -> Dict[str, Any]:
+    async def replace_text(self, presentation_id: str, old_text: str, new_text: str) -> Dict[str, Any]:
         """Replace all occurrences of text in presentation."""
         self.logger.info("Replacing text in presentation: %s", presentation_id)
 
@@ -167,16 +146,12 @@ class SlidesService:
             {"replaceAllText": {"containsText": {"text": old_text, "matchCase": False}, "replaceText": new_text}}
         ]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Text replaced successfully")
         return result
 
-    def add_image(
+    async def add_image(
         self,
         presentation_id: str,
         slide_id: str,
@@ -208,16 +183,12 @@ class SlidesService:
             }
         ]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Image added successfully")
         return result
 
-    def format_text(
+    async def format_text(
         self,
         presentation_id: str,
         element_id: str,
@@ -260,18 +231,14 @@ class SlidesService:
             }
         ]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Text formatted successfully")
         return result
 
-    def get_slide_ids(self, presentation_id: str) -> List[str]:
+    async def get_slide_ids(self, presentation_id: str) -> List[str]:
         """Get all slide IDs from presentation."""
-        presentation = self.get_presentation(presentation_id)
+        presentation = await self.get_presentation(presentation_id)
 
         slide_ids = []
         for slide in presentation.get("slides", []):
@@ -279,23 +246,19 @@ class SlidesService:
 
         return slide_ids
 
-    def duplicate_slide(self, presentation_id: str, slide_id: str) -> Dict[str, Any]:
+    async def duplicate_slide(self, presentation_id: str, slide_id: str) -> Dict[str, Any]:
         """Duplicate a slide."""
         self.logger.info("Duplicating slide %s in presentation: %s", slide_id, presentation_id)
 
         requests = [{"duplicateObject": {"objectId": slide_id}}]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Slide duplicated successfully")
         return result
 
     # Theme Management Methods
-    def import_theme(
+    async def import_theme(
         self, presentation_id: str, template_presentation_id: str, set_as_theme: bool = False
     ) -> Dict[str, Any]:
         """Import theme from another presentation.
@@ -308,7 +271,7 @@ class SlidesService:
         self.logger.info("Importing theme from %s to %s", template_presentation_id, presentation_id)
 
         # Get the master from the template presentation
-        template_presentation = self.get_presentation(template_presentation_id)
+        template_presentation = await self.get_presentation(template_presentation_id)
 
         # Apply the master to our presentation
         requests = []
@@ -326,21 +289,17 @@ class SlidesService:
             )
 
         if requests:
-            result = (
-                self.service.presentations()
-                .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-                .execute()
-            )
+            result = await self.slides_api.batch_update(presentation_id, requests)
 
             if set_as_theme:
-                self.set_theme(presentation_id, "IMPORTED")
+                await self.set_theme(presentation_id, "IMPORTED")
 
             self.logger.info("Theme imported successfully")
             return result
 
         return {}
 
-    def set_theme(self, presentation_id: str, theme_name: str) -> Dict[str, Any]:
+    async def set_theme(self, presentation_id: str, theme_name: str) -> Dict[str, Any]:
         """Set theme for the presentation.
 
         Available themes:
@@ -394,7 +353,7 @@ class SlidesService:
         return {"acknowledged": True, "theme": theme_name, "message": "Theme setting acknowledged"}
 
     # Layout Management Methods
-    def list_layouts(self, presentation_id: str) -> List[Dict[str, Any]]:
+    async def list_layouts(self, presentation_id: str) -> List[Dict[str, Any]]:
         """List available slide layouts.
 
         Returns:
@@ -420,7 +379,9 @@ class SlidesService:
         return layouts
 
     # Slide Management Methods
-    def add_slide(self, presentation_id: str, layout: str = "BLANK", position: Optional[int] = None) -> Dict[str, Any]:
+    async def add_slide(
+        self, presentation_id: str, layout: str = "BLANK", position: Optional[int] = None
+    ) -> Dict[str, Any]:
         """Add a slide with specified layout at specified position.
 
         Args:
@@ -440,16 +401,12 @@ class SlidesService:
 
         requests.append(create_request)
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Slide added successfully")
         return result
 
-    def move_slide(self, presentation_id: str, slide_id: str, new_position: int) -> Dict[str, Any]:
+    async def move_slide(self, presentation_id: str, slide_id: str, new_position: int) -> Dict[str, Any]:
         """Move a slide to a new position.
 
         Args:
@@ -461,16 +418,12 @@ class SlidesService:
 
         requests = [{"updateSlidePosition": {"slideObjectIds": [slide_id], "insertionIndex": new_position}}]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Slide moved successfully")
         return result
 
-    def remove_slide(self, presentation_id: str, slide_id: str) -> Dict[str, Any]:
+    async def remove_slide(self, presentation_id: str, slide_id: str) -> Dict[str, Any]:
         """Remove (delete) a slide.
 
         Args:
@@ -480,7 +433,7 @@ class SlidesService:
         return self.delete_slide(presentation_id, slide_id)
 
     # Content Management Methods
-    def list_slide_content(self, presentation_id: str, slide_identifier: str) -> List[Dict[str, Any]]:
+    async def list_slide_content(self, presentation_id: str, slide_identifier: str) -> List[Dict[str, Any]]:
         """List all content elements in a slide.
 
         Args:
@@ -492,23 +445,23 @@ class SlidesService:
         """
         self.logger.info("Listing content for slide %s in presentation: %s", slide_identifier, presentation_id)
 
-        presentation = self.get_presentation(presentation_id)
+        presentation = await self.get_presentation(presentation_id)
         slides = presentation.get("slides", [])
 
         # Find the target slide
-        target_slide = self._find_slide_by_identifier(slides, slide_identifier)
+        target_slide = await self._find_slide_by_identifier(slides, slide_identifier)
         if not target_slide:
             available_ids = [f"{i+1} ({slide['objectId']})" for i, slide in enumerate(slides)]
             raise ValueError(f"Slide '{slide_identifier}' not found. Available slides: {', '.join(available_ids)}")
 
         content_elements = []
         for element in target_slide.get("pageElements", []):
-            element_info = self._extract_detailed_element_info(element)
+            element_info = await self._extract_detailed_element_info(element)
             content_elements.append(element_info)
 
         return content_elements
 
-    def list_multiple_slides_content(
+    async def list_multiple_slides_content(
         self, presentation_id: str, slide_identifiers: List[str] = None
     ) -> Dict[str, List[Dict[str, Any]]]:
         """List content elements for multiple slides or all slides.
@@ -522,7 +475,7 @@ class SlidesService:
         """
         self.logger.info("Listing content for multiple slides in presentation: %s", presentation_id)
 
-        presentation = self.get_presentation(presentation_id)
+        presentation = await self.get_presentation(presentation_id)
         slides = presentation.get("slides", [])
 
         if slide_identifiers is None:
@@ -530,10 +483,10 @@ class SlidesService:
             target_slides = [(i + 1, slide) for i, slide in enumerate(slides)]
         else:
             # Expand ranges and find specified slides
-            expanded_identifiers = self._expand_slide_identifiers(slide_identifiers, len(slides))
+            expanded_identifiers = await self._expand_slide_identifiers(slide_identifiers, len(slides))
             target_slides = []
             for identifier in expanded_identifiers:
-                slide = self._find_slide_by_identifier(slides, identifier)
+                slide = await self._find_slide_by_identifier(slides, identifier)
                 if slide:
                     slide_num = next((i + 1 for i, s in enumerate(slides) if s["objectId"] == slide["objectId"]), "?")
                     target_slides.append((slide_num, slide))
@@ -543,13 +496,15 @@ class SlidesService:
             slide_key = f"Slide {slide_num} ({slide['objectId']})"
             content_elements = []
             for element in slide.get("pageElements", []):
-                element_info = self._extract_detailed_element_info(element)
+                element_info = await self._extract_detailed_element_info(element)
                 content_elements.append(element_info)
             results[slide_key] = content_elements
 
         return results
 
-    def _find_slide_by_identifier(self, slides: List[Dict[str, Any]], identifier: str) -> Optional[Dict[str, Any]]:
+    async def _find_slide_by_identifier(
+        self, slides: List[Dict[str, Any]], identifier: str
+    ) -> Optional[Dict[str, Any]]:
         """Find slide by number (1,2,3...) or API object ID."""
         # Try as slide number first
         try:
@@ -566,7 +521,7 @@ class SlidesService:
 
         return None
 
-    def _parse_slide_range(self, range_str: str, total_slides: int) -> List[int]:
+    async def _parse_slide_range(self, range_str: str, total_slides: int) -> List[int]:
         """Parse slide range string into list of 1-based slide numbers.
 
         Examples:
@@ -596,7 +551,7 @@ class SlidesService:
 
         return sorted(list(slide_numbers))
 
-    def _expand_slide_identifiers(self, identifiers: List[str], total_slides: int) -> List[str]:
+    async def _expand_slide_identifiers(self, identifiers: List[str], total_slides: int) -> List[str]:
         """Expand slide identifiers that may contain ranges into individual slide numbers/IDs."""
         expanded = []
 
@@ -605,7 +560,7 @@ class SlidesService:
             if "-" in identifier or "," in identifier:
                 try:
                     # Try to parse as range
-                    slide_numbers = self._parse_slide_range(identifier, total_slides)
+                    slide_numbers = await self._parse_slide_range(identifier, total_slides)
                     expanded.extend([str(num) for num in slide_numbers])
                 except (ValueError, TypeError):
                     # If parsing fails, treat as regular identifier
@@ -616,7 +571,7 @@ class SlidesService:
 
         return expanded
 
-    def _extract_detailed_element_info(self, element: Dict[str, Any]) -> Dict[str, Any]:
+    async def _extract_detailed_element_info(self, element: Dict[str, Any]) -> Dict[str, Any]:
         """Extract detailed information from a page element."""
         element_info = {
             "id": element["objectId"],
@@ -647,14 +602,14 @@ class SlidesService:
 
             # Extract text content
             if "text" in shape:
-                text_content = self._extract_text_from_shape(shape["text"])
+                text_content = await self._extract_text_from_shape(shape["text"])
                 if text_content:
                     element_info["text_content"] = text_content
-                    element_info["text_details"] = self._extract_text_formatting(shape["text"])
+                    element_info["text_details"] = await self._extract_text_formatting(shape["text"])
 
             # Extract shape properties
             if "shapeProperties" in shape:
-                element_info["shape_properties"] = self._extract_shape_properties(shape["shapeProperties"])
+                element_info["shape_properties"] = await self._extract_shape_properties(shape["shapeProperties"])
 
         elif "image" in element:
             image = element["image"]
@@ -667,11 +622,11 @@ class SlidesService:
             table = element["table"]
             element_info["table_info"] = {"rows": table.get("rows", 0), "columns": table.get("columns", 0)}
             # Extract table cell contents
-            element_info["table_contents"] = self._extract_table_contents(table)
+            element_info["table_contents"] = await self._extract_table_contents(table)
 
         return element_info
 
-    def _extract_text_from_shape(self, text_data: Dict[str, Any]) -> str:
+    async def _extract_text_from_shape(self, text_data: Dict[str, Any]) -> str:
         """Extract plain text content from shape text data."""
         text_content = ""
         for text_element in text_data.get("textElements", []):
@@ -680,7 +635,7 @@ class SlidesService:
                 text_content += content
         return text_content.strip()
 
-    def _extract_text_formatting(self, text_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    async def _extract_text_formatting(self, text_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Extract text formatting details."""
         formatting_details = []
         for text_element in text_data.get("textElements", []):
@@ -704,7 +659,7 @@ class SlidesService:
                 formatting_details.append(detail)
         return formatting_details
 
-    def _extract_shape_properties(self, shape_props: Dict[str, Any]) -> Dict[str, Any]:
+    async def _extract_shape_properties(self, shape_props: Dict[str, Any]) -> Dict[str, Any]:
         """Extract shape visual properties."""
         properties = {}
 
@@ -724,7 +679,7 @@ class SlidesService:
 
         return properties
 
-    def _extract_table_contents(self, table_data: Dict[str, Any]) -> List[List[str]]:
+    async def _extract_table_contents(self, table_data: Dict[str, Any]) -> List[List[str]]:
         """Extract text contents from table cells."""
         contents = []
         table_rows = table_data.get("tableRows", [])
@@ -734,13 +689,13 @@ class SlidesService:
             for cell in row.get("tableCells", []):
                 cell_text = ""
                 if "text" in cell:
-                    cell_text = self._extract_text_from_shape(cell["text"])
+                    cell_text = await self._extract_text_from_shape(cell["text"])
                 row_contents.append(cell_text)
             contents.append(row_contents)
 
         return contents
 
-    def _get_element_type(self, element: Dict[str, Any]) -> str:
+    async def _get_element_type(self, element: Dict[str, Any]) -> str:
         """Determine the type of page element."""
         if "shape" in element:
             return "text" if element["shape"].get("shapeType") == "TEXT_BOX" else "shape"
@@ -753,7 +708,7 @@ class SlidesService:
         else:
             return "unknown"
 
-    def add_text_content(
+    async def add_text_content(
         self,
         presentation_id: str,
         slide_id: str,
@@ -794,19 +749,15 @@ class SlidesService:
 
         # Apply formatting if provided
         if format_options:
-            format_request = self._create_text_format_request(element_id, format_options, len(text))
+            format_request = await self._create_text_format_request(element_id, format_options, len(text))
             requests.extend(format_request)
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Text content added successfully")
         return result
 
-    def _create_text_format_request(
+    async def _create_text_format_request(
         self, element_id: str, format_options: Dict[str, Any], text_length: int
     ) -> List[Dict[str, Any]]:
         """Create formatting requests for text."""
@@ -858,7 +809,7 @@ class SlidesService:
 
         return requests
 
-    def add_image_content(
+    async def add_image_content(
         self,
         presentation_id: str,
         slide_id: str,
@@ -871,7 +822,7 @@ class SlidesService:
         """Add image content to a slide."""
         return self.add_image(presentation_id, slide_id, image_url, x, y, width, height)
 
-    def add_table_content(
+    async def add_table_content(
         self,
         presentation_id: str,
         slide_id: str,
@@ -916,16 +867,12 @@ class SlidesService:
             }
         ]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Table added successfully")
         return result
 
-    def remove_content(self, presentation_id: str, element_id: str) -> Dict[str, Any]:
+    async def remove_content(self, presentation_id: str, element_id: str) -> Dict[str, Any]:
         """Remove content element from slide.
 
         Args:
@@ -936,16 +883,12 @@ class SlidesService:
 
         requests = [{"deleteObject": {"objectId": element_id}}]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Content element removed successfully")
         return result
 
-    def move_content(self, presentation_id: str, element_id: str, x: float, y: float) -> Dict[str, Any]:
+    async def move_content(self, presentation_id: str, element_id: str, x: float, y: float) -> Dict[str, Any]:
         """Move content element to new position.
 
         Args:
@@ -965,17 +908,13 @@ class SlidesService:
             }
         ]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Content element moved successfully")
         return result
 
     # Table-specific methods
-    def add_table_row(self, presentation_id: str, table_id: str, position: int = -1) -> Dict[str, Any]:
+    async def add_table_row(self, presentation_id: str, table_id: str, position: int = -1) -> Dict[str, Any]:
         """Add row to table.
 
         Args:
@@ -992,16 +931,12 @@ class SlidesService:
 
         requests = [insert_request]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Table row added successfully")
         return result
 
-    def add_table_column(self, presentation_id: str, table_id: str, position: int = -1) -> Dict[str, Any]:
+    async def add_table_column(self, presentation_id: str, table_id: str, position: int = -1) -> Dict[str, Any]:
         """Add column to table.
 
         Args:
@@ -1018,16 +953,12 @@ class SlidesService:
 
         requests = [insert_request]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Table column added successfully")
         return result
 
-    def set_table_cell_value(
+    async def set_table_cell_value(
         self, presentation_id: str, table_id: str, row: int, column: int, text: str
     ) -> Dict[str, Any]:
         """Set value in table cell.
@@ -1051,17 +982,13 @@ class SlidesService:
             }
         ]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Table cell value set successfully")
         return result
 
     # Text-specific methods
-    def update_text_content(self, presentation_id: str, element_id: str, new_text: str) -> Dict[str, Any]:
+    async def update_text_content(self, presentation_id: str, element_id: str, new_text: str) -> Dict[str, Any]:
         """Update text content of an element.
 
         Args:
@@ -1077,11 +1004,7 @@ class SlidesService:
             {"insertText": {"objectId": element_id, "text": new_text}},
         ]
 
-        result = (
-            self.service.presentations()
-            .batchUpdate(presentationId=presentation_id, body={"requests": requests})
-            .execute()
-        )
+        result = await self.slides_api.batch_update(presentation_id, requests)
 
         self.logger.info("Text content updated successfully")
         return result
@@ -1102,8 +1025,8 @@ class SlidesService:
         self.logger.info("Translating text content for element %s to %s", element_id, target_language)
 
         # Get current text
-        presentation = self.get_presentation(presentation_id)
-        current_text = self._extract_element_text(presentation, element_id)
+        presentation = await self.get_presentation(presentation_id)
+        current_text = await self._extract_element_text(presentation, element_id)
 
         if not current_text:
             return {}
@@ -1113,16 +1036,16 @@ class SlidesService:
         await translate_service.initialize()
 
         # Translate the text
-        translation_result = translate_service.translate_text(current_text, target_language, source_language)
+        translation_result = await translate_service.translate_text(current_text, target_language, source_language)
         translated_text = translation_result["translatedText"]
 
         # Update the element with translated text
-        result = self.update_text_content(presentation_id, element_id, translated_text)
+        result = await self.update_text_content(presentation_id, element_id, translated_text)
 
         self.logger.info("Text content translated successfully")
         return result
 
-    def _extract_element_text(self, presentation: Dict[str, Any], element_id: str) -> str:
+    async def _extract_element_text(self, presentation: Dict[str, Any], element_id: str) -> str:
         """Extract text content from a presentation element."""
         for slide in presentation.get("slides", []):
             for element in slide.get("pageElements", []):
@@ -1136,7 +1059,7 @@ class SlidesService:
                         return text_content
         return ""
 
-    def format_text_content(
+    async def format_text_content(
         self,
         presentation_id: str,
         element_id: str,
@@ -1157,11 +1080,11 @@ class SlidesService:
 
         if end_index is None:
             # Get text length
-            presentation = self.get_presentation(presentation_id)
-            text = self._extract_element_text(presentation, element_id)
+            presentation = await self.get_presentation(presentation_id)
+            text = await self._extract_element_text(presentation, element_id)
             end_index = len(text)
 
-        format_requests = self._create_text_format_request(element_id, format_options, end_index - start_index)
+        format_requests = await self._create_text_format_request(element_id, format_options, end_index - start_index)
 
         # Update the text range for the requests
         for request in format_requests:
@@ -1169,11 +1092,7 @@ class SlidesService:
                 request["updateTextStyle"]["textRange"] = {"startIndex": start_index, "endIndex": end_index}
 
         if format_requests:
-            result = (
-                self.service.presentations()
-                .batchUpdate(presentationId=presentation_id, body={"requests": format_requests})
-                .execute()
-            )
+            result = await self.slides_api.batch_update(presentation_id, format_requests)
 
             self.logger.info("Text content formatted successfully")
             return result
@@ -1202,11 +1121,11 @@ class SlidesService:
         self.logger.info("Downloading presentation %s as %s", presentation_id, format_type.upper())
 
         # Get presentation info for slide count validation
-        presentation = self.get_presentation(presentation_id)
+        presentation = await self.get_presentation(presentation_id)
         total_slides = len(presentation.get("slides", []))
 
         # Parse slide range
-        slide_indices = self._parse_slide_range(slides_range, total_slides) if slides_range else None
+        slide_indices = await self._parse_slide_range(slides_range, total_slides) if slides_range else None
 
         if format_type.lower() in ["png", "jpeg"]:
             return await self._download_as_images(
@@ -1215,7 +1134,7 @@ class SlidesService:
         else:
             return await self._download_as_document(presentation_id, output_path, format_type, slide_indices)
 
-    def _parse_slide_range(self, range_str: str, total_slides: int) -> List[int]:
+    async def _parse_slide_range(self, range_str: str, total_slides: int) -> List[int]:
         """Parse slide range string into list of 0-based slide indices.
 
         Examples:
@@ -1314,7 +1233,7 @@ class SlidesService:
             slides_to_download = list(range(total_slides))
 
         # Get slide object IDs
-        presentation = self.get_presentation(presentation_id)
+        presentation = await self.get_presentation(presentation_id)
         slide_objects = presentation.get("slides", [])
 
         headers = {"Authorization": f"Bearer {credentials.token}"}
@@ -1357,7 +1276,7 @@ class SlidesService:
         return output_dir
 
     # Copy Operations
-    def copy_slides(
+    async def copy_slides(
         self,
         source_presentation_id: str,
         target_presentation_id: str,
@@ -1387,16 +1306,16 @@ class SlidesService:
         )
 
         # Get source presentation
-        source_presentation = self.get_presentation(source_presentation_id)
+        source_presentation = await self.get_presentation(source_presentation_id)
         source_slides = source_presentation.get("slides", [])
 
         # Expand slide identifiers to handle ranges
-        expanded_identifiers = self._expand_slide_identifiers(slide_identifiers, len(source_slides))
+        expanded_identifiers = await self._expand_slide_identifiers(slide_identifiers, len(source_slides))
 
         # Find source slides to copy
         slides_to_copy = []
         for identifier in expanded_identifiers:
-            slide = self._find_slide_by_identifier(source_slides, identifier)
+            slide = await self._find_slide_by_identifier(source_slides, identifier)
             if slide:
                 slides_to_copy.append(slide)
 
@@ -1404,7 +1323,7 @@ class SlidesService:
             raise ValueError(f"No valid slides found for identifiers: {slide_identifiers}")
 
         # Get target presentation
-        target_presentation = self.get_presentation(target_presentation_id)
+        target_presentation = await self.get_presentation(target_presentation_id)
         target_slides = target_presentation.get("slides", [])
 
         # Determine insertion position
@@ -1418,20 +1337,18 @@ class SlidesService:
 
             if preserve_theme:
                 # Copy slide with all content and formatting
-                requests.extend(self._create_slide_copy_requests(source_slide, current_insert_index, link_to_source))
+                requests.extend(
+                    await self._create_slide_copy_requests(source_slide, current_insert_index, link_to_source)
+                )
             else:
                 # Create blank slide and copy only content
                 requests.extend(
-                    self._create_slide_content_copy_requests(source_slide, current_insert_index, link_to_source)
+                    await self._create_slide_content_copy_requests(source_slide, current_insert_index, link_to_source)
                 )
 
         # Execute all copy requests
         if requests:
-            result = (
-                self.service.presentations()
-                .batchUpdate(presentationId=target_presentation_id, body={"requests": requests})
-                .execute()
-            )
+            result = await self.slides_api.batch_update(target_presentation_id, requests)
 
             # Extract new slide IDs from response
             for reply in result.get("replies", []):
@@ -1449,14 +1366,14 @@ class SlidesService:
             "link_to_source": link_to_source,
         }
 
-    def _create_slide_copy_requests(
+    async def _create_slide_copy_requests(
         self, source_slide: Dict[str, Any], insert_index: int, link_to_source: bool
     ) -> List[Dict[str, Any]]:
         """Create requests to copy a slide with full formatting."""
         requests = []
 
         # Create new slide
-        slide_layout = self._get_slide_layout(source_slide)
+        slide_layout = await self._get_slide_layout(source_slide)
         requests.append(
             {
                 "createSlide": {
@@ -1472,7 +1389,7 @@ class SlidesService:
 
         return requests
 
-    def _create_slide_content_copy_requests(
+    async def _create_slide_content_copy_requests(
         self, source_slide: Dict[str, Any], insert_index: int, link_to_source: bool
     ) -> List[Dict[str, Any]]:
         """Create requests to copy slide content without theme."""
@@ -1490,7 +1407,7 @@ class SlidesService:
 
         return requests
 
-    def _get_slide_layout(self, slide: Dict[str, Any]) -> str:
+    async def _get_slide_layout(self, slide: Dict[str, Any]) -> str:
         """Determine the layout of a slide based on its properties."""
         # Analyze slide elements to determine most appropriate layout
         page_elements = slide.get("pageElements", [])

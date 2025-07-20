@@ -15,7 +15,7 @@ src_dir = current_dir.parent
 sys.path.insert(0, str(src_dir))
 
 import godri.config.logging_config
-from godri.services.auth_service import AuthService
+from godri.services.auth_service_new import AuthService
 from godri.services.drive_service import DriveService
 from godri.services.docs_service import DocsService
 from godri.services.sheets_service import SheetsService

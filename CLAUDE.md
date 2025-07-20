@@ -9,7 +9,7 @@ Godri is a comprehensive Python CLI tool for Google Drive and Google Workspace o
 ### Core Components
 
 - **CLI Entry Point**: `src/godri/main.py` - Main application with argparse-based hierarchical command structure
-- **Authentication**: `src/godri/services/auth_service.py` - OAuth2 flow with persistent token storage
+- **Authentication**: `src/godri/services/auth_service_new.py` - Async OAuth2 flow with persistent token storage
 - **Service Layer**: Individual service classes for each Google API
 - **MCP Server**: `src/godri/services/mcp_server.py` - FastMCP integration for AI assistant access
 
@@ -17,7 +17,7 @@ Godri is a comprehensive Python CLI tool for Google Drive and Google Workspace o
 
 ```
 GodriCLI (main.py)
-├── AuthService (auth_service.py) - OAuth2 authentication
+├── AuthService (auth_service_new.py) - Async OAuth2 authentication
 ├── DriveService (drive_service.py) - File operations, smart download
 ├── DocsService (docs_service.py) - Document CRUD, markdown support
 ├── SheetsService (sheets_service.py) - Spreadsheet operations, formatting
@@ -77,7 +77,7 @@ godri/
 │   ├── config/
 │   │   └── logging_config.py   # Logging configuration
 │   └── services/
-│       ├── auth_service.py     # OAuth2 authentication
+│       ├── auth_service_new.py # Async OAuth2 authentication
 │       ├── drive_service.py    # Google Drive operations
 │       ├── docs_service.py     # Google Docs with markdown support
 │       ├── sheets_service.py   # Google Sheets comprehensive operations
@@ -94,7 +94,7 @@ godri/
 - **Package Manager**: UV (`uv run pip install -e .`, `uv add`, `uv sync` for development)
 - **Installation**: `uv run pip install -e .` (installs `godri` command globally in development mode)
 - **Python Version**: 3.11+
-- **Key Dependencies**: google-api-python-client, mcp, fastapi, aiofiles, aiohttp
+- **Key Dependencies**: google-auth-oauthlib, google-auth, mcp, fastapi, aiofiles, aiohttp (pure async implementation)
 
 ## Common Commands
 
@@ -291,11 +291,14 @@ git commit -m "Descriptive commit message"
 - ✅ Code formatting with Black (120 character line length)
 - ✅ End-to-end testing validation
 - ✅ Package installation and CLI functionality verification
+- ✅ **July 2025**: Complete async refactoring of slides_service.py and forms_service.py
+- ✅ **July 2025**: Removal of all synchronous Google Cloud dependencies
+- ✅ **July 2025**: Full pure async implementation with aiohttp achieved
 
 ### Architecture Transformation
 The project has been completely transformed from synchronous Google client libraries to a fully async implementation using aiohttp:
 
-**Before:** `google-api-python-client`, `google-cloud-speech`, `google-cloud-translate`, `google-auth-oauthlib`, `google-auth-httplib2`
+**Before:** `google-api-python-client`, `google-cloud-speech`, `google-cloud-translate`, `google-auth-httplib2` (removed in July 2025)
 
 **After:** Pure async HTTP clients with aiohttp, comprehensive retry logic, rate limiting, concurrent request handling, and resumable file uploads
 

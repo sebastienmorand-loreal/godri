@@ -116,7 +116,7 @@ class FormsService:
 
         return questions
 
-    def get_question(self, form_id: str, question_number: int) -> Optional[Dict[str, Any]]:
+    async def get_question(self, form_id: str, question_number: int) -> Optional[Dict[str, Any]]:
         """Get a specific question by its number.
 
         Args:
@@ -131,7 +131,7 @@ class FormsService:
 
         self.logger.info("Getting question %d from form: %s", question_number, form_id)
 
-        questions = self.get_questions(form_id)
+        questions = await self.get_questions(form_id)
         actual_questions = [q for q in questions if not q.get("is_section_break")]
 
         if 1 <= question_number <= len(actual_questions):
@@ -142,7 +142,7 @@ class FormsService:
         self.logger.warning("Question %d not found (form has %d questions)", question_number, len(actual_questions))
         return None
 
-    def get_section_questions(self, form_id: str, section_number: int) -> List[Dict[str, Any]]:
+    async def get_section_questions(self, form_id: str, section_number: int) -> List[Dict[str, Any]]:
         """Get all questions from a specific section.
 
         Args:
@@ -159,7 +159,7 @@ class FormsService:
         section_index = section_number - 1
         self.logger.info("Getting questions from section %d (1-based) in form: %s", section_number, form_id)
 
-        questions = self.get_questions(form_id)
+        questions = await self.get_questions(form_id)
         section_questions = [
             q for q in questions if not q.get("is_section_break") and q.get("section", {}).get("index") == section_index
         ]
@@ -167,7 +167,7 @@ class FormsService:
         self.logger.info("Found %d questions in section %d", len(section_questions), section_number)
         return section_questions
 
-    def get_sections(self, form_id: str) -> List[Dict[str, Any]]:
+    async def get_sections(self, form_id: str) -> List[Dict[str, Any]]:
         """Get all sections from a form.
 
         Args:
@@ -178,7 +178,7 @@ class FormsService:
         """
         self.logger.info("Getting all sections from form: %s", form_id)
 
-        questions = self.get_questions(form_id)
+        questions = await self.get_questions(form_id)
         sections = []
 
         # Add default section if there are questions before the first page break
@@ -199,7 +199,7 @@ class FormsService:
         for item in questions:
             if item.get("is_section_break"):
                 section_info = item.get("section_info", {})
-                section_questions = self.get_section_questions(form_id, section_info.get("index", 0) + 1)
+                section_questions = await self.get_section_questions(form_id, section_info.get("index", 0) + 1)
                 sections.append(
                     {
                         "index": section_info.get("index", 0),
@@ -215,7 +215,7 @@ class FormsService:
         self.logger.info("Found %d sections in form", len(sections))
         return sections
 
-    def add_section(
+    async def add_section(
         self,
         form_id: str,
         title: str,
@@ -252,7 +252,7 @@ class FormsService:
             if section_number < 1 or question_number < 1:
                 raise ValueError("Section and question numbers must be 1-based (>= 1)")
 
-            index = self._calculate_index_location(
+            index = await self._calculate_index_location(
                 form_id, section_number=section_number, question_number=question_number, position=position
             )
             location = {"index": index}
@@ -261,12 +261,12 @@ class FormsService:
         request = {"createItem": {"item": new_item, "location": location}}
 
         batch_request = {"requests": [request]}
-        response = self.service.forms().batchUpdate(formId=form_id, body=batch_request).execute()
+        response = await self.forms_api.batch_update(form_id, batch_request)
 
         self.logger.info("Section '%s' added successfully", title)
         return response
 
-    def add_question(
+    async def add_question(
         self,
         form_id: str,
         question_data: Dict[str, Any],
@@ -301,15 +301,17 @@ class FormsService:
         # Use new pageBreak-based location calculation
         if position == "end":
             # Add to end of specified section
-            index = self._calculate_index_location(form_id, section_number=section_number, position_in_section="end")
+            index = await self._calculate_index_location(
+                form_id, section_number=section_number, position_in_section="end"
+            )
         elif position in ["before", "after"] and reference_question is not None:
             # reference_question is already the question number within the specified section (1-based)
-            index = self._calculate_index_location(
+            index = await self._calculate_index_location(
                 form_id, section_number=section_number, question_number=reference_question, position=position
             )
         else:
             # Fallback to end of form
-            index = self._calculate_index_location(form_id)
+            index = await self._calculate_index_location(form_id)
 
         location = {"index": index}
 
@@ -317,12 +319,14 @@ class FormsService:
         request = {"createItem": {"item": new_item, "location": location}}
 
         batch_request = {"requests": [request]}
-        response = self.service.forms().batchUpdate(formId=form_id, body=batch_request).execute()
+        response = await self.forms_api.batch_update(form_id, batch_request)
 
         self.logger.info("Question added successfully")
         return response
 
-    def update_question(self, form_id: str, question_number: int, question_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def update_question(
+        self, form_id: str, question_number: int, question_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Update an existing question.
 
         Args:
@@ -339,7 +343,7 @@ class FormsService:
         self.logger.info("Updating question %d (1-based) in form: %s", question_number, form_id)
 
         # Get current question to find its item ID
-        current_question = self.get_question(form_id, question_number)
+        current_question = await self.get_question(form_id, question_number)
         if not current_question:
             raise ValueError(f"Question {question_number} not found")
 
@@ -348,7 +352,7 @@ class FormsService:
         updated_item["itemId"] = item_id
 
         # Get the current item position from the form structure
-        form = self.get_form(form_id)
+        form = await self.get_form(form_id)
         items = form.get("items", [])
         item_position = next((i for i, item in enumerate(items) if item.get("itemId") == item_id), 0)
 
@@ -362,12 +366,12 @@ class FormsService:
         }
 
         batch_request = {"requests": [request]}
-        response = self.service.forms().batchUpdate(formId=form_id, body=batch_request).execute()
+        response = await self.forms_api.batch_update(form_id, batch_request)
 
         self.logger.info("Question %d updated successfully", question_number)
         return response
 
-    def update_question_by_section(
+    async def update_question_by_section(
         self, form_id: str, section_number: int, question_number_in_section: int, question_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Update a question by section and question number within that section.
@@ -391,12 +395,12 @@ class FormsService:
         )
 
         # Use new method to get exact index for finding the item
-        index = self._calculate_index_location(
+        index = await self._calculate_index_location(
             form_id, section_number=section_number, question_number=question_number_in_section, position="exact"
         )
 
         # Get raw form to find item_id at this index
-        form = self.service.forms().get(formId=form_id).execute()
+        form = await self.forms_api.get_form(form_id)
         items = form.get("items", [])
 
         if index >= len(items):
@@ -418,12 +422,12 @@ class FormsService:
         request = {"updateItem": {"item": updated_item, "updateMask": "*"}}
 
         batch_request = {"requests": [request]}
-        response = self.service.forms().batchUpdate(formId=form_id, body=batch_request).execute()
+        response = await self.forms_api.batch_update(form_id, batch_request)
 
         self.logger.info("Question %d in section %d updated successfully", question_number_in_section, section_number)
         return response
 
-    def update_section(
+    async def update_section(
         self,
         form_id: str,
         section_number: int,
@@ -453,7 +457,7 @@ class FormsService:
         self.logger.info("Updating section %d (1-based) in form: %s", section_number, form_id)
 
         # Get current sections to find the target section
-        sections = self.get_sections(form_id)
+        sections = await self.get_sections(form_id)
         target_section = next((s for s in sections if s["index"] == section_index), None)
         if not target_section:
             raise ValueError(f"Section {section_index} not found")
@@ -474,12 +478,12 @@ class FormsService:
         request = {"updateItem": {"item": updated_item, "updateMask": "*"}}
 
         batch_request = {"requests": [request]}
-        response = self.service.forms().batchUpdate(formId=form_id, body=batch_request).execute()
+        response = await self.forms_api.batch_update(form_id, batch_request)
 
         self.logger.info("Section %d updated successfully", section_index)
         return response
 
-    def remove_question(self, form_id: str, question_number: int) -> Dict[str, Any]:
+    async def remove_question(self, form_id: str, question_number: int) -> Dict[str, Any]:
         """Remove a question from the form.
 
         Args:
@@ -495,7 +499,7 @@ class FormsService:
         self.logger.info("Removing question %d (1-based) from form: %s", question_number, form_id)
 
         # Get current question to find its section and position
-        current_question = self.get_question(form_id, question_number)
+        current_question = await self.get_question(form_id, question_number)
         if not current_question:
             raise ValueError(f"Question {question_number} not found")
 
@@ -503,7 +507,7 @@ class FormsService:
         ref_section = current_question.get("section", {}).get("index", 0) + 1  # Convert to 1-based
 
         # Find question number within that section
-        questions = self.get_questions(form_id)
+        questions = await self.get_questions(form_id)
         actual_questions = [q for q in questions if not q.get("is_section_break")]
         section_questions = [
             q
@@ -515,7 +519,7 @@ class FormsService:
         )
 
         # Use new method to get exact index
-        index = self._calculate_index_location(
+        index = await self._calculate_index_location(
             form_id, section_number=ref_section, question_number=question_in_section, position="exact"
         )
 
@@ -523,12 +527,12 @@ class FormsService:
         request = {"deleteItem": {"location": {"index": index}}}
 
         batch_request = {"requests": [request]}
-        response = self.service.forms().batchUpdate(formId=form_id, body=batch_request).execute()
+        response = await self.forms_api.batch_update(form_id, batch_request)
 
         self.logger.info("Question %d removed successfully", question_number)
         return response
 
-    def remove_question_by_section(
+    async def remove_question_by_section(
         self, form_id: str, section_number: int, question_number_in_section: int
     ) -> Dict[str, Any]:
         """Remove a question by section and question number within that section.
@@ -551,7 +555,7 @@ class FormsService:
         )
 
         # Use new method to get exact index
-        index = self._calculate_index_location(
+        index = await self._calculate_index_location(
             form_id, section_number=section_number, question_number=question_number_in_section, position="exact"
         )
 
@@ -559,12 +563,12 @@ class FormsService:
         request = {"deleteItem": {"location": {"index": index}}}
 
         batch_request = {"requests": [request]}
-        response = self.service.forms().batchUpdate(formId=form_id, body=batch_request).execute()
+        response = await self.forms_api.batch_update(form_id, batch_request)
 
         self.logger.info("Question %d from section %d removed successfully", question_number_in_section, section_number)
         return response
 
-    def remove_section(self, form_id: str, section_number: int) -> Dict[str, Any]:
+    async def remove_section(self, form_id: str, section_number: int) -> Dict[str, Any]:
         """Remove a section and all its questions.
 
         Args:
@@ -582,8 +586,8 @@ class FormsService:
         self.logger.info("Removing section %d (1-based) and its questions from form: %s", section_number, form_id)
 
         # Get section questions first
-        section_questions = self.get_section_questions(form_id, section_number)
-        sections = self.get_sections(form_id)
+        section_questions = await self.get_section_questions(form_id, section_number)
+        sections = await self.get_sections(form_id)
         target_section = next((s for s in sections if s["index"] == section_index), None)
 
         if not target_section:
@@ -599,14 +603,14 @@ class FormsService:
         # Remove the section page break if it has an item_id
         if target_section.get("item_id"):
             # Find the section's position index
-            questions = self.get_questions(form_id)
+            questions = await self.get_questions(form_id)
             section_item = next((q for q in questions if q.get("item_id") == target_section["item_id"]), None)
             if section_item:
                 requests.append({"deleteItem": {"location": {"index": section_item.get("position_index", 0)}}})
 
         if requests:
             batch_request = {"requests": requests}
-            response = self.service.forms().batchUpdate(formId=form_id, body=batch_request).execute()
+            response = await self.forms_api.batch_update(form_id, batch_request)
             self.logger.info("Section %d and %d questions removed successfully", section_number, len(section_questions))
             return response
         else:
@@ -644,19 +648,19 @@ class FormsService:
         self.logger.info("Translating question %d (1-based) to %s", question_number, target_language)
 
         # Get current question
-        question = self.get_question(form_id, question_number)
+        question = await self.get_question(form_id, question_number)
         if not question:
             raise ValueError(f"Question {question_number} not found")
 
         # Translate question title and description
-        title_translation = self.translate_service.translate_text(
+        title_translation = await self.translate_service.translate_text(
             question.get("title", ""), target_language, source_language
         )
         translated_title = title_translation.get("translatedText", question.get("title", ""))
 
         translated_description = ""
         if question.get("description"):
-            desc_translation = self.translate_service.translate_text(
+            desc_translation = await self.translate_service.translate_text(
                 question["description"], target_language, source_language
             )
             translated_description = desc_translation.get("translatedText", question["description"])
@@ -668,7 +672,7 @@ class FormsService:
             if "options" in choice_question:
                 for option in choice_question["options"]:
                     if "value" in option:
-                        option_translation = self.translate_service.translate_text(
+                        option_translation = await self.translate_service.translate_text(
                             option["value"], target_language, source_language
                         )
                         translated_value = option_translation.get("translatedText", option["value"])
@@ -687,7 +691,7 @@ class FormsService:
             updated_question_data["options"] = [opt["translated"] for opt in translated_options]
 
         # Update the question with translations
-        update_response = self.update_question(form_id, question_number, updated_question_data)
+        update_response = await self.update_question(form_id, question_number, updated_question_data)
 
         result = {
             "question_number": question_number,
@@ -743,7 +747,7 @@ class FormsService:
         )
 
         # Get source question details
-        source_questions = self.get_questions(form_id, section_filter=source_section_number)
+        source_questions = await self.get_questions(form_id, section_filter=source_section_number)
         source_questions_only = [q for q in source_questions if not q.get("is_section_break")]
 
         if not source_questions_only or source_question_number > len(source_questions_only):
@@ -753,12 +757,12 @@ class FormsService:
         source_item_id = source_question["item_id"]
 
         # Get the current item position from the form structure
-        form = self.get_form(form_id)
+        form = await self.get_form(form_id)
         items = form.get("items", [])
         source_index = next((i for i, item in enumerate(items) if item.get("itemId") == source_item_id), 0)
 
         # Calculate target location
-        target_index = self._calculate_index_location(
+        target_index = await self._calculate_index_location(
             form_id, section_number=target_section_number, question_number=target_question_number, position=position
         )
 
@@ -771,12 +775,12 @@ class FormsService:
         }
 
         batch_request = {"requests": [request]}
-        response = self.service.forms().batchUpdate(formId=form_id, body=batch_request).execute()
+        response = await self.forms_api.batch_update(form_id, batch_request)
 
         self.logger.info("Question moved successfully")
         return response
 
-    def _get_section_items(self, form_id: str, section_number: int) -> List[Dict[str, Any]]:
+    async def _get_section_items(self, form_id: str, section_number: int) -> List[Dict[str, Any]]:
         """Get all items (section break + questions) that belong to a specific section.
 
         Args:
@@ -786,20 +790,20 @@ class FormsService:
         Returns:
             List of items (form items) that belong to the section, including the section break itself
         """
-        form = self.get_form(form_id)
+        form = await self.get_form(form_id)
         items = form.get("items", [])
 
         # Use _calculate_index_location to find precise section boundaries
         if section_number == 1:
             # Default section: from start until first pageBreakItem
             start_index = 0
-            end_index = self._calculate_index_location(form_id, section_number=1, position_in_section="end")
+            end_index = await self._calculate_index_location(form_id, section_number=1, position_in_section="end")
         else:
             # Other sections: from pageBreakItem to end of section
-            start_index = self._calculate_index_location(
+            start_index = await self._calculate_index_location(
                 form_id, section_number=section_number, position_in_section="start"
             )
-            end_index = self._calculate_index_location(
+            end_index = await self._calculate_index_location(
                 form_id, section_number=section_number, position_in_section="end"
             )
 
@@ -816,7 +820,7 @@ class FormsService:
 
         return section_items
 
-    def _get_section_item_indices(self, form_id: str, section_number: int) -> List[int]:
+    async def _get_section_item_indices(self, form_id: str, section_number: int) -> List[int]:
         """Get indices of all items (section break + questions) that belong to a specific section.
 
         Args:
@@ -826,20 +830,20 @@ class FormsService:
         Returns:
             List of indices that belong to the section, including the section break itself
         """
-        form = self.get_form(form_id)
+        form = await self.get_form(form_id)
         items = form.get("items", [])
 
         # Use _calculate_index_location to find precise section boundaries
         if section_number == 1:
             # Default section: from start until first pageBreakItem
             start_index = 0
-            end_index = self._calculate_index_location(form_id, section_number=1, position_in_section="end")
+            end_index = await self._calculate_index_location(form_id, section_number=1, position_in_section="end")
         else:
             # Other sections: from pageBreakItem to end of section
-            start_index = self._calculate_index_location(
+            start_index = await self._calculate_index_location(
                 form_id, section_number=section_number, position_in_section="start"
             )
-            end_index = self._calculate_index_location(
+            end_index = await self._calculate_index_location(
                 form_id, section_number=section_number, position_in_section="end"
             )
 
@@ -856,9 +860,9 @@ class FormsService:
 
         return section_indices
 
-    def _get_sections_list(self, form_id: str) -> List[Dict[str, Any]]:
+    async def _get_sections_list(self, form_id: str) -> List[Dict[str, Any]]:
         """Get list of all sections in the form."""
-        form = self.service.forms().get(formId=form_id).execute()
+        form = await self.forms_api.get_form(form_id)
         items = form.get("items", [])
 
         sections = []
@@ -898,28 +902,30 @@ class FormsService:
             Move operation response
         """
         # Get form structure
-        form = self.service.forms().get(formId=form_id).execute()
+        form = await self.forms_api.get_form(form_id)
         items = form.get("items", [])
 
         self.logger.debug("Form has %d items", len(items))
 
         # Get the indices of all items in the source section
         source_section_index = (
-            self._calculate_index_location(form_id, source_section_number, position_in_section="start") - 1
+            await self._calculate_index_location(form_id, source_section_number, position_in_section="start") - 1
         )
 
         # Get the items for the source section (actually we just need the number of items)
-        source_items = self._get_section_items(form_id, source_section_number)
+        source_items = await self._get_section_items(form_id, source_section_number)
 
         # Calculate destination index
         if position == "after":
-            if target_section_number == len(self._get_sections_list(form_id)):
+            if target_section_number == len(await self._get_sections_list(form_id)):
                 # Moving after the last section
                 destination_index = len(items) - 1
             else:
                 # Moving after target section but not the last one - go before the next section
                 next_section_number = target_section_number + 1
-                destination_index = self._calculate_index_location(form_id, next_section_number, position="start") - 1
+                destination_index = (
+                    await self._calculate_index_location(form_id, next_section_number, position="start") - 1
+                )
         else:  # position == "before"
             if target_section_number == 1:
                 # Moving before first section
@@ -927,7 +933,8 @@ class FormsService:
             else:
                 # Moving before target section
                 destination_index = (
-                    self._calculate_index_location(form_id, target_section_number, position_in_section="start") - 1
+                    await self._calculate_index_location(form_id, target_section_number, position_in_section="start")
+                    - 1
                 )
 
         self.logger.debug("Source section index: %s", source_section_index)
@@ -956,7 +963,7 @@ class FormsService:
         # Execute batch update
         batch_request = {"requests": requests}
         print(batch_request)
-        return self.service.forms().batchUpdate(formId=form_id, body=batch_request).execute()
+        return await self.forms_api.batch_update(form_id, batch_request)
 
     def _process_form_structure(self, form: Dict[str, Any]) -> Dict[str, Any]:
         """Process raw form data into organized structure."""
@@ -1031,7 +1038,7 @@ class FormsService:
             "position_index": item.get("positionIndex", 0),
         }
 
-    def _calculate_index_location(
+    async def _calculate_index_location(
         self,
         form_id: str,
         section_number: Optional[int] = None,
@@ -1065,7 +1072,7 @@ class FormsService:
             _calculate_index_location(form_id, section_number=2, question_number=3, position="after")
         """
         # Get raw form structure
-        form = self.service.forms().get(formId=form_id).execute()
+        form = await self.forms_api.get_form(form_id)
         items = form.get("items", [])
 
         if not items:
@@ -1153,20 +1160,20 @@ class FormsService:
                 f"Question {question_number} not found in section {section_number} (only {questions_found} questions exist)"
             )
 
-    def _calculate_insertion_location(
+    async def _calculate_insertion_location(
         self, form_id: str, position: str, reference_question: Optional[int] = None, section_index: Optional[int] = None
     ) -> Dict[str, Any]:
         """Legacy method - use _calculate_index_location for new code."""
         try:
             if position == "end" and section_index is not None:
                 section_number = section_index + 1  # Convert 0-based to 1-based
-                index = self._calculate_index_location(
+                index = await self._calculate_index_location(
                     form_id, section_number=section_number, position_in_section="end"
                 )
             elif reference_question is not None:
                 # This is more complex - need to find which section the reference question is in
                 # For now, fallback to original logic but this should be refactored
-                questions = self.get_questions(form_id)
+                questions = await self.get_questions(form_id)
                 actual_questions = [q for q in questions if not q.get("is_section_break")]
 
                 if reference_question < 1 or reference_question > len(actual_questions):
@@ -1187,7 +1194,7 @@ class FormsService:
                     1,
                 )
 
-                index = self._calculate_index_location(
+                index = await self._calculate_index_location(
                     form_id, section_number=ref_section, question_number=question_in_section, position=position
                 )
             else:
