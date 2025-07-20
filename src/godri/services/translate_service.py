@@ -16,15 +16,21 @@ class TranslateService:
         self.translate_api = None
 
     async def initialize(self):
-        """Initialize the Translate service."""
-        credentials = await self.auth_service.authenticate()
-        if not credentials:
-            raise ValueError("Failed to authenticate with Google Translate")
+        """Initialize the Translate service using gcloud access token."""
+        # Get gcloud access token instead of OAuth2 credentials
+        access_token = await self.auth_service.get_gcloud_access_token()
+        if not access_token:
+            raise ValueError("Failed to get gcloud access token for Google Translate")
+
+        # Create a simple token credentials object
+        from google.oauth2.credentials import Credentials
+
+        credentials = Credentials(token=access_token)
 
         api_client = GoogleApiClient(credentials)
         await api_client.initialize()
         self.translate_api = TranslateApiClient(api_client)
-        self.logger.info("Translate service initialized")
+        self.logger.info("Translate service initialized with gcloud token")
 
     async def translate_text(
         self, text: str, target_language: str, source_language: Optional[str] = None

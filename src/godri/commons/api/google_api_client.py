@@ -64,6 +64,7 @@ class GoogleApiClient:
         params: Optional[Dict[str, Any]] = None,
         data: Optional[Dict[str, Any]] = None,
         files: Optional[Dict[str, Any]] = None,
+        additional_headers: Optional[Dict[str, str]] = None,
         retry_count: int = 0,
     ) -> Dict[str, Any]:
         """Make an async HTTP request with retry logic."""
@@ -72,6 +73,10 @@ class GoogleApiClient:
 
         await self.refresh_credentials()
         headers = self.get_headers()
+
+        # Merge additional headers if provided
+        if additional_headers:
+            headers.update(additional_headers)
 
         if files:
             # For file uploads, don't set Content-Type header (let aiohttp handle it)
@@ -92,7 +97,9 @@ class GoogleApiClient:
                         self.logger.warning("401 Unauthorized, refreshing credentials and retrying")
                         await self.refresh_credentials()
                         await asyncio.sleep(self.retry_delay)
-                        return await self.make_request(method, url, params, data, files, retry_count + 1)
+                        return await self.make_request(
+                            method, url, params, data, files, additional_headers, retry_count + 1
+                        )
                     else:
                         raise aiohttp.ClientResponseError(
                             response.request_info, response.history, status=response.status
@@ -104,7 +111,9 @@ class GoogleApiClient:
                         delay = self.retry_delay * (2**retry_count)
                         self.logger.warning(f"Rate limited, retrying in {delay}s")
                         await asyncio.sleep(delay)
-                        return await self.make_request(method, url, params, data, files, retry_count + 1)
+                        return await self.make_request(
+                            method, url, params, data, files, additional_headers, retry_count + 1
+                        )
                     else:
                         raise aiohttp.ClientResponseError(
                             response.request_info, response.history, status=response.status
@@ -116,7 +125,9 @@ class GoogleApiClient:
                         delay = self.retry_delay * (2**retry_count)
                         self.logger.warning(f"Server error {response.status}, retrying in {delay}s")
                         await asyncio.sleep(delay)
-                        return await self.make_request(method, url, params, data, files, retry_count + 1)
+                        return await self.make_request(
+                            method, url, params, data, files, additional_headers, retry_count + 1
+                        )
                     else:
                         raise aiohttp.ClientResponseError(
                             response.request_info, response.history, status=response.status

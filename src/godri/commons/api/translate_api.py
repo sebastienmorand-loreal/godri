@@ -2,6 +2,7 @@
 
 import json
 import logging
+import asyncio
 from typing import Dict, Any, List, Optional, Union
 from .google_api_client import GoogleApiClient
 
@@ -13,6 +14,31 @@ class TranslateApiClient:
         self.api_client = api_client
         self.logger = logging.getLogger(__name__)
         self.base_url = "https://translation.googleapis.com/language/translate/v2"
+        self._quota_project = None
+
+    async def _get_quota_project(self) -> Optional[str]:
+        """Get quota project from gcloud config."""
+        if self._quota_project:
+            return self._quota_project
+
+        try:
+            result = await asyncio.create_subprocess_shell(
+                "gcloud config get core/project",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await result.communicate()
+
+            if result.returncode == 0:
+                self._quota_project = stdout.decode().strip()
+                self.logger.debug("Got quota project: %s", self._quota_project)
+                return self._quota_project
+            else:
+                self.logger.warning("Failed to get quota project: %s", stderr.decode())
+                return None
+        except Exception as e:
+            self.logger.warning("Failed to run gcloud command: %s", str(e))
+            return None
 
     async def translate_text(
         self,
@@ -35,8 +61,18 @@ class TranslateApiClient:
         if model:
             translate_data["model"] = model
 
+        # Get quota project and add to URL and headers
+        quota_project = await self._get_quota_project()
         url = f"{self.base_url}"
-        result = await self.api_client.make_request("POST", url, data=translate_data)
+
+        additional_headers = {}
+        if quota_project:
+            url = f"{self.base_url}?quotaUser={quota_project}"
+            additional_headers["X-Goog-User-Project"] = quota_project
+
+        result = await self.api_client.make_request(
+            "POST", url, data=translate_data, additional_headers=additional_headers
+        )
 
         translations = result.get("data", {}).get("translations", [])
         self.logger.info(f"Successfully translated {len(translations)} text(s)")

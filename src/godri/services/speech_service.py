@@ -16,15 +16,21 @@ class SpeechService:
         self.speech_api = None
 
     async def initialize(self):
-        """Initialize the Speech service."""
-        credentials = await self.auth_service.authenticate()
-        if not credentials:
-            raise ValueError("Failed to authenticate with Google Speech")
+        """Initialize the Speech service using gcloud access token."""
+        # Get gcloud access token instead of OAuth2 credentials
+        access_token = await self.auth_service.get_gcloud_access_token()
+        if not access_token:
+            raise ValueError("Failed to get gcloud access token for Google Speech")
+
+        # Create a simple token credentials object
+        from google.oauth2.credentials import Credentials
+
+        credentials = Credentials(token=access_token)
 
         api_client = GoogleApiClient(credentials)
         await api_client.initialize()
         self.speech_api = SpeechApiClient(api_client)
-        self.logger.info("Speech service initialized")
+        self.logger.info("Speech service initialized with gcloud token")
 
     async def transcribe_audio_file(
         self,

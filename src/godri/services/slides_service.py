@@ -988,8 +988,39 @@ class SlidesService:
         return result
 
     # Text-specific methods
+    async def update_text_content_preserving_format(
+        self, presentation_id: str, slide_id: str, element_id: str, current_text: str, new_text: str
+    ) -> Dict[str, Any]:
+        """Update text content of an element while preserving formatting using replaceAllText.
+
+        Args:
+            presentation_id: Presentation ID
+            slide_id: Slide ID containing the element
+            element_id: Text element ID
+            current_text: Current text content
+            new_text: New text content
+        """
+        self.logger.info(
+            "Updating text content for element %s in presentation: %s (preserving format)", element_id, presentation_id
+        )
+
+        # Use replaceAllText on the specific slide to preserve formatting
+        requests = [
+            {
+                "replaceAllText": {
+                    "containsText": {"text": current_text, "matchCase": True},
+                    "replaceText": new_text,
+                    "pageObjectIds": [slide_id],
+                }
+            }
+        ]
+
+        result = await self.slides_api.batch_update(presentation_id, requests)
+        self.logger.info("Text content updated successfully with formatting preserved")
+        return result
+
     async def update_text_content(self, presentation_id: str, element_id: str, new_text: str) -> Dict[str, Any]:
-        """Update text content of an element.
+        """Update text content of an element (fallback method - may not preserve all formatting).
 
         Args:
             presentation_id: Presentation ID
@@ -998,11 +1029,21 @@ class SlidesService:
         """
         self.logger.info("Updating text content for element %s in presentation: %s", element_id, presentation_id)
 
-        # First delete existing text, then insert new text
-        requests = [
-            {"deleteText": {"objectId": element_id, "textRange": {"type": "ALL"}}},
-            {"insertText": {"objectId": element_id, "text": new_text}},
-        ]
+        # Get the current presentation to find the element and its current text
+        presentation = await self.get_presentation(presentation_id)
+        current_text = await self._extract_element_text(presentation, element_id)
+
+        if not current_text:
+            # If no current text, just insert new text
+            requests = [
+                {"insertText": {"objectId": element_id, "text": new_text, "insertionIndex": 0}},
+            ]
+        else:
+            # Delete and insert - this preserves some formatting but not all
+            requests = [
+                {"deleteText": {"objectId": element_id, "textRange": {"startIndex": 0, "endIndex": len(current_text)}}},
+                {"insertText": {"objectId": element_id, "text": new_text, "insertionIndex": 0}},
+            ]
 
         result = await self.slides_api.batch_update(presentation_id, requests)
 
@@ -1044,6 +1085,108 @@ class SlidesService:
 
         self.logger.info("Text content translated successfully")
         return result
+
+    async def translate_slides(
+        self, presentation_id: str, slides: str, target_language: str, source_language: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Translate text content in slides.
+
+        Args:
+            presentation_id: Presentation ID
+            slides: Slide range/number to translate (e.g., '1-3', '2', '1,3,5', 'all')
+            target_language: Target language code
+            source_language: Source language code (auto-detect if None)
+
+        Returns:
+            Dictionary with translation results
+        """
+        from .translate_service import TranslateService
+
+        self.logger.info("Translating slides %s in presentation %s to %s", slides, presentation_id, target_language)
+
+        # Initialize translate service
+        translate_service = TranslateService(self.auth_service)
+        await translate_service.initialize()
+
+        # Get presentation
+        presentation = await self.get_presentation(presentation_id)
+        total_slides = len(presentation.get("slides", []))
+
+        # Parse slide range - use the method that returns 0-based indices directly
+        if slides.lower() == "all":
+            slide_indices = list(range(total_slides))
+        else:
+            # Use the second _parse_slide_range method that returns 0-based indices
+            slide_indices = []
+            for part in slides.split(","):
+                part = part.strip()
+                if "-" in part:
+                    # Range like "2-4"
+                    start, end = map(int, part.split("-"))
+                    # Convert to 0-based and validate
+                    start_idx = max(0, start - 1)
+                    end_idx = min(total_slides - 1, end - 1)
+                    slide_indices.extend(range(start_idx, end_idx + 1))
+                else:
+                    # Single slide like "3"
+                    slide_num = int(part)
+                    slide_idx = slide_num - 1  # Convert to 0-based
+                    if 0 <= slide_idx < total_slides:
+                        slide_indices.append(slide_idx)
+            slide_indices = sorted(list(set(slide_indices)))
+
+        if not slide_indices:
+            self.logger.warning("No valid slides found for range: %s", slides)
+            return {"translated_slides": 0}
+
+        translated_count = 0
+        total_translated_elements = 0
+
+        for slide_index in slide_indices:
+            slide = presentation["slides"][slide_index]
+            slide_id = slide["objectId"]
+            slide_translated_elements = 0
+
+            # Process all text elements in the slide
+            for element in slide.get("pageElements", []):
+                if "shape" in element and "text" in element["shape"]:
+                    element_id = element["objectId"]
+
+                    # Extract current text
+                    current_text = await self._extract_element_text(presentation, element_id)
+
+                    if current_text and current_text.strip():
+                        try:
+                            # Translate the text
+                            translation_result = await translate_service.translate_text(
+                                current_text, target_language, source_language
+                            )
+                            translated_text = translation_result["translatedText"]
+
+                            # Update the element with translated text while preserving formatting
+                            await self.update_text_content_preserving_format(
+                                presentation_id, slide_id, element_id, current_text, translated_text
+                            )
+                            slide_translated_elements += 1
+
+                        except Exception as e:
+                            self.logger.warning("Failed to translate element %s: %s", element_id, str(e))
+
+            if slide_translated_elements > 0:
+                translated_count += 1
+                total_translated_elements += slide_translated_elements
+
+        self.logger.info(
+            "Translation complete: %d slides translated, %d text elements updated",
+            translated_count,
+            total_translated_elements,
+        )
+
+        return {
+            "translated_slides": translated_count,
+            "total_elements_translated": total_translated_elements,
+            "target_language": target_language,
+        }
 
     async def _extract_element_text(self, presentation: Dict[str, Any], element_id: str) -> str:
         """Extract text content from a presentation element."""

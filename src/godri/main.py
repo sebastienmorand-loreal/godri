@@ -172,7 +172,7 @@ class GodriCLI:
     async def handle_create_sheet(self, args):
         """Handle Google Sheet creation command."""
         try:
-            result = self.sheets_service.create_spreadsheet(args.title, args.folder_id)
+            result = await self.sheets_service.create_spreadsheet(args.title, args.folder_id)
             print(f"Spreadsheet created successfully!")
             print(f"  - ID: {result['spreadsheetId']}")
             print(f"  - Title: {result['properties']['title']}")
@@ -184,7 +184,7 @@ class GodriCLI:
         """Handle Google Slides creation command."""
         try:
             theme = getattr(args, "theme", "STREAMLINE")
-            result = self.slides_service.create_presentation(args.title, args.folder_id, theme)
+            result = await self.slides_service.create_presentation(args.title, args.folder_id, theme)
             print(f"Presentation created successfully!")
             print(f"  - ID: {result['presentationId']}")
             print(f"  - Title: {result['title']}")
@@ -196,7 +196,7 @@ class GodriCLI:
     async def handle_translate(self, args):
         """Handle text translation command."""
         try:
-            result = self.translate_service.translate_text(args.text, args.target_language, args.source_language)
+            result = await self.translate_service.translate_text(args.text, args.target_language, args.source_language)
             print(f"Translation:")
             print(f"  - Original: {args.text}")
             print(f"  - Translated: {result['translatedText']}")
@@ -880,6 +880,8 @@ class GodriCLI:
             await self.handle_slides_download(args)
         elif args.slides_command == "copy":
             await self.handle_slides_copy(args)
+        elif args.slides_command == "translate":
+            await self.handle_slides_translate(args)
 
     async def handle_translate_doc(self, args):
         """Handle document translation."""
@@ -917,6 +919,23 @@ class GodriCLI:
 
         except Exception as e:
             self.logger.error("Failed to translate sheet range: %s", str(e))
+            sys.exit(1)
+
+    async def handle_slides_translate(self, args):
+        """Handle slide translation."""
+        try:
+            result = await self.slides_service.translate_slides(
+                args.presentation_id, args.slides, args.target_language, getattr(args, "source_language", None)
+            )
+
+            if result:
+                translated_slides = result.get("translated_slides", 0)
+                print(f"Successfully translated {translated_slides} slides to {args.target_language}")
+            else:
+                print("No slides were translated")
+
+        except Exception as e:
+            self.logger.error("Failed to translate slides: %s", str(e))
             sys.exit(1)
 
     async def handle_import_csv(self, args):
@@ -1010,14 +1029,14 @@ class GodriCLI:
         """Handle slides themes subcommands."""
         try:
             if args.themes_action == "import":
-                result = self.slides_service.import_theme(
+                result = await self.slides_service.import_theme(
                     args.presentation_id, args.template_id, getattr(args, "set", False)
                 )
                 print(f"Theme imported successfully from presentation {args.template_id}")
                 if getattr(args, "set", False):
                     print("Theme automatically applied to presentation")
             elif args.themes_action == "set":
-                result = self.slides_service.set_theme(args.presentation_id, args.theme_name)
+                result = await self.slides_service.set_theme(args.presentation_id, args.theme_name)
                 print(f"Theme '{args.theme_name}' applied successfully to presentation {args.presentation_id}")
         except Exception as e:
             self.logger.error("Failed to manage theme: %s", str(e))
@@ -1027,7 +1046,7 @@ class GodriCLI:
         """Handle slides layout subcommands."""
         try:
             if args.layout_action == "list":
-                layouts = self.slides_service.list_layouts(args.presentation_id)
+                layouts = await self.slides_service.list_layouts(args.presentation_id)
                 print(f"Available layouts for presentation {args.presentation_id}:")
                 for layout in layouts:
                     print(f"  - {layout['name']}: {layout['description']}")
@@ -1038,7 +1057,9 @@ class GodriCLI:
     async def handle_slides_add(self, args):
         """Handle adding slides."""
         try:
-            result = self.slides_service.add_slide(args.presentation_id, args.layout, getattr(args, "position", None))
+            result = await self.slides_service.add_slide(
+                args.presentation_id, args.layout, getattr(args, "position", None)
+            )
             print(f"Slide added successfully with layout '{args.layout}'")
             if hasattr(args, "position") and args.position is not None:
                 print(f"Inserted at position {args.position}")
@@ -1051,7 +1072,7 @@ class GodriCLI:
     async def handle_slides_move(self, args):
         """Handle moving slides."""
         try:
-            result = self.slides_service.move_slide(args.presentation_id, args.slide_id, args.position)
+            result = await self.slides_service.move_slide(args.presentation_id, args.slide_id, args.position)
             print(f"Slide {args.slide_id} moved to position {args.position}")
         except Exception as e:
             self.logger.error("Failed to move slide: %s", str(e))
@@ -1060,7 +1081,7 @@ class GodriCLI:
     async def handle_slides_remove(self, args):
         """Handle removing slides."""
         try:
-            result = self.slides_service.remove_slide(args.presentation_id, args.slide_id)
+            result = await self.slides_service.remove_slide(args.presentation_id, args.slide_id)
             print(f"Slide {args.slide_id} removed successfully")
         except Exception as e:
             self.logger.error("Failed to remove slide: %s", str(e))
@@ -1090,7 +1111,7 @@ class GodriCLI:
             format_options = json.loads(args.format)
 
         if args.content_type == "text":
-            result = self.slides_service.add_text_content(
+            result = await self.slides_service.add_text_content(
                 args.presentation_id,
                 args.slide_id,
                 args.content,
@@ -1102,7 +1123,7 @@ class GodriCLI:
             )
             print(f"Text content added to slide {args.slide_id}")
         elif args.content_type == "image":
-            result = self.slides_service.add_image_content(
+            result = await self.slides_service.add_image_content(
                 args.presentation_id, args.slide_id, args.content, args.x, args.y, args.width, args.height
             )
             print(f"Image content added to slide {args.slide_id}")
@@ -1110,7 +1131,7 @@ class GodriCLI:
             # Parse ROWSxCOLS format
             if "x" in args.content.lower():
                 rows, cols = map(int, args.content.lower().split("x"))
-                result = self.slides_service.add_table_content(
+                result = await self.slides_service.add_table_content(
                     args.presentation_id, args.slide_id, rows, cols, args.x, args.y, args.width, args.height
                 )
                 print(f"Table ({rows}x{cols}) added to slide {args.slide_id}")
@@ -1122,7 +1143,7 @@ class GodriCLI:
         try:
             if args.all or not args.slides:
                 # List content for all slides
-                results = self.slides_service.list_multiple_slides_content(args.presentation_id)
+                results = await self.slides_service.list_multiple_slides_content(args.presentation_id)
                 if not results:
                     print("No slides found in presentation")
                     return
@@ -1130,7 +1151,7 @@ class GodriCLI:
                 self._display_multiple_slides_content(results, args.detailed)
             else:
                 # List content for specific slides (always use multiple handler to support ranges)
-                results = self.slides_service.list_multiple_slides_content(args.presentation_id, args.slides)
+                results = await self.slides_service.list_multiple_slides_content(args.presentation_id, args.slides)
                 if not results:
                     print("No content found for specified slides")
                     return
@@ -1225,12 +1246,12 @@ class GodriCLI:
 
     async def handle_slides_content_remove(self, args):
         """Handle removing content from slides."""
-        result = self.slides_service.remove_content(args.presentation_id, args.element_id)
+        result = await self.slides_service.remove_content(args.presentation_id, args.element_id)
         print(f"Content element {args.element_id} removed successfully")
 
     async def handle_slides_content_move(self, args):
         """Handle moving content on slides."""
-        result = self.slides_service.move_content(args.presentation_id, args.element_id, args.x, args.y)
+        result = await self.slides_service.move_content(args.presentation_id, args.element_id, args.x, args.y)
         print(f"Content element {args.element_id} moved to position ({args.x}, {args.y})")
 
     async def handle_slides_download(self, args):
@@ -1267,7 +1288,7 @@ class GodriCLI:
     async def handle_slides_copy(self, args):
         """Handle copying slides between presentations."""
         try:
-            result = self.slides_service.copy_slides(
+            result = await self.slides_service.copy_slides(
                 args.source_presentation_id,
                 args.target_presentation_id,
                 args.slides,
@@ -1779,6 +1800,15 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
             "--link-to-source", action="store_true", help="Link slides to source presentation (default: no linking)"
         )
         slides_copy_parser.add_argument("--position", type=int, help="Position to insert slides (default: at end)")
+
+        # slides translate
+        slides_translate_parser = slides_subparsers.add_parser("translate", help="Translate slide content")
+        slides_translate_parser.add_argument("presentation_id", help="Presentation ID")
+        slides_translate_parser.add_argument(
+            "slides", help="Slide range/number to translate (e.g., '1-3', '2', '1,3,5', 'all')"
+        )
+        slides_translate_parser.add_argument("target_language", help="Target language code (e.g., 'fr', 'es')")
+        slides_translate_parser.add_argument("--source-language", "-s", help="Source language code")
 
         # TRANSLATE command
         translate_parser = subparsers.add_parser("translate", help="Translate text")

@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import asyncio
+import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Any
 import aiofiles
@@ -220,3 +221,27 @@ class AuthService:
             raise RuntimeError("Not authenticated. Call authenticate() first.")
 
         return self.credentials
+
+    async def get_gcloud_access_token(self) -> Optional[str]:
+        """Get access token from gcloud CLI."""
+        try:
+            self.logger.info("Getting access token from gcloud CLI")
+
+            # Run gcloud auth print-access-token
+            result = await asyncio.create_subprocess_shell(
+                "gcloud auth print-access-token", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+
+            stdout, stderr = await result.communicate()
+
+            if result.returncode == 0:
+                token = stdout.decode().strip()
+                self.logger.info("Successfully retrieved gcloud access token")
+                return token
+            else:
+                self.logger.error("Failed to get gcloud token: %s", stderr.decode())
+                return None
+
+        except Exception as e:
+            self.logger.error("Failed to run gcloud command: %s", str(e))
+            return None
