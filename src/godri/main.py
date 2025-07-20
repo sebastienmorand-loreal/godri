@@ -1522,6 +1522,13 @@ class GodriCLI:
             "--disable", action="store_true", help="Disable keep forever (allow auto-deletion)"
         )
 
+        # docs versions restore
+        docs_versions_restore_parser = docs_versions_subparsers.add_parser(
+            "restore", help="Restore a document to a specific version"
+        )
+        docs_versions_restore_parser.add_argument("document_id", help="Document ID")
+        docs_versions_restore_parser.add_argument("revision_id", help="Revision ID to restore to")
+
         # SHEETS command with subcommands
         sheets_parser = subparsers.add_parser("sheets", help="Google Sheets operations")
         sheets_subparsers = sheets_parser.add_subparsers(dest="sheets_command", help="Sheets operations")
@@ -1763,6 +1770,13 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
             "--disable", action="store_true", help="Disable keep forever (allow auto-deletion)"
         )
 
+        # sheets versions restore
+        sheets_versions_restore_parser = sheets_versions_subparsers.add_parser(
+            "restore", help="Restore a spreadsheet to a specific version"
+        )
+        sheets_versions_restore_parser.add_argument("spreadsheet_id", help="Spreadsheet ID")
+        sheets_versions_restore_parser.add_argument("revision_id", help="Revision ID to restore to")
+
         # SLIDES command
         slides_parser = subparsers.add_parser("slides", help="Google Slides operations")
         slides_subparsers = slides_parser.add_subparsers(dest="slides_command", help="Slides operations")
@@ -1962,6 +1976,13 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
         versions_keep_parser.add_argument(
             "--disable", action="store_true", help="Disable keep forever (allow auto-deletion)"
         )
+
+        # slides versions restore
+        versions_restore_parser = versions_subparsers.add_parser(
+            "restore", help="Restore a presentation to a specific version"
+        )
+        versions_restore_parser.add_argument("presentation_id", help="Presentation ID")
+        versions_restore_parser.add_argument("revision_id", help="Revision ID to restore to")
 
         # TRANSLATE command
         translate_parser = subparsers.add_parser("translate", help="Translate text")
@@ -2209,6 +2230,13 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
                 )
                 action = "enabled" if keep_forever else "disabled"
                 print(f"Keep forever {action} for version {args.revision_id}")
+            elif args.versions_action == "restore":
+                result = await self.slides_service.restore_presentation_version(args.presentation_id, args.revision_id)
+                print(f"Presentation restored successfully:")
+                print(f"  Restored file: {result.get('restored_file_name')}")
+                print(f"  New file ID: {result.get('restored_file_id')}")
+                print(f"  Method: {result.get('method')}")
+                print(f"  Note: {result.get('note')}")
         except Exception as e:
             self.logger.error("Version management failed: %s", str(e))
             sys.exit(1)
@@ -2257,6 +2285,13 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
                 )
                 action = "enabled" if keep_forever else "disabled"
                 print(f"Keep forever {action} for version {args.revision_id}")
+            elif args.versions_action == "restore":
+                result = await self.docs_service.restore_document_version(args.document_id, args.revision_id)
+                print(f"Document restored successfully:")
+                print(f"  Restored file: {result.get('restored_file_name')}")
+                print(f"  New file ID: {result.get('restored_file_id')}")
+                print(f"  Method: {result.get('method')}")
+                print(f"  Note: {result.get('note')}")
         except Exception as e:
             self.logger.error("Version management failed: %s", str(e))
             sys.exit(1)
@@ -2306,6 +2341,13 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
                 )
                 action = "enabled" if keep_forever else "disabled"
                 print(f"Keep forever {action} for version {args.revision_id}")
+            elif args.versions_action == "restore":
+                result = await self.sheets_service.restore_spreadsheet_version(args.spreadsheet_id, args.revision_id)
+                print(f"Spreadsheet restored successfully:")
+                print(f"  Restored file: {result.get('restored_file_name')}")
+                print(f"  New file ID: {result.get('restored_file_id')}")
+                print(f"  Method: {result.get('method')}")
+                print(f"  Note: {result.get('note')}")
         except Exception as e:
             self.logger.error("Version management failed: %s", str(e))
             sys.exit(1)

@@ -232,6 +232,12 @@ class DriveApiClient:
         result = await self.api_client.make_request("GET", url, params=params)
         revisions = result.get("revisions", [])
         self.logger.info(f"Found {len(revisions)} revisions for file {file_id}")
+
+        # Debug: Log the first revision to see what fields are actually returned
+        if revisions:
+            self.logger.info(f"DEBUG - Sample revision fields: {list(revisions[0].keys())}")
+            self.logger.info(f"DEBUG - Sample revision data: {revisions[0]}")
+
         return result
 
     async def get_file_revision(
@@ -286,6 +292,104 @@ class DriveApiClient:
         result = await self.api_client.make_request("PATCH", url, data=data)
         self.logger.info(f"Revision {revision_id} keepForever updated to {keep_forever}")
         return result
+
+    async def restore_file_revision(self, file_id: str, revision_id: str) -> Dict[str, Any]:
+        """Restore a file to a specific revision by copying the revision content to the current file."""
+        self.logger.info(f"Restoring file {file_id} to revision {revision_id}")
+
+        try:
+            # First, get the revision content by downloading it
+            revision_url = f"{self.base_url}/files/{file_id}/revisions/{revision_id}"
+            download_url = f"{revision_url}?alt=media"
+
+            # Download the revision content
+            revision_content = await self.api_client.make_request("GET", download_url, return_content=True)
+
+            # For Google Workspace files, we need to use the export functionality
+            # Get file metadata to determine if it's a Google Workspace file
+            file_metadata = await self.get_file_info(file_id, "mimeType,name,parents")
+            mime_type = file_metadata.get("mimeType", "")
+
+            if mime_type.startswith("application/vnd.google-apps"):
+                # For Google Workspace files, we need to export the old revision in a compatible format
+                # and then create a new file with that content
+                file_name = file_metadata.get("name", "Unknown")
+                restore_name = f"{file_name} (Restored from revision {revision_id})"
+
+                self.logger.info(f"Creating new file '{restore_name}' with content from revision {revision_id}")
+
+                # Determine export format based on file type
+                export_formats = {
+                    "application/vnd.google-apps.presentation": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    "application/vnd.google-apps.document": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "application/vnd.google-apps.spreadsheet": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                }
+
+                export_mime_type = export_formats.get(mime_type)
+                if not export_mime_type:
+                    raise ValueError(f"Unsupported Google Workspace file type for restoration: {mime_type}")
+
+                # Export the old revision
+                export_url = f"{self.base_url}/files/{file_id}/revisions/{revision_id}/export"
+                export_params = {"mimeType": export_mime_type}
+
+                old_content = await self.api_client.make_request(
+                    "GET", export_url, params=export_params, return_content=True
+                )
+
+                # Create new file with the old content
+                # Note: This creates a new file rather than restoring the original
+                upload_metadata = {"name": restore_name, "parents": file_metadata.get("parents", [])}
+
+                # Use multipart upload for the new file
+                boundary = "----formdata-gdrive-restore"
+                upload_data = (
+                    (
+                        f"--{boundary}\r\n"
+                        f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                        f"{json.dumps(upload_metadata)}\r\n"
+                        f"--{boundary}\r\n"
+                        f"Content-Type: {export_mime_type}\r\n\r\n"
+                    ).encode()
+                    + old_content
+                    + f"\r\n--{boundary}--\r\n".encode()
+                )
+
+                upload_headers = {
+                    "Content-Type": f"multipart/related; boundary={boundary}",
+                    "Content-Length": str(len(upload_data)),
+                }
+
+                upload_url = f"{self.base_url}/files?uploadType=multipart"
+                result = await self.api_client.make_request(
+                    "POST", upload_url, data=upload_data, headers=upload_headers
+                )
+
+                self.logger.info(f"Successfully created restored file: {result.get('name')} (ID: {result.get('id')})")
+
+                return {
+                    "restored_file_id": result.get("id"),
+                    "restored_file_name": restore_name,
+                    "original_file_id": file_id,
+                    "revision_id": revision_id,
+                    "method": "export_and_create",
+                    "note": f"Created new file '{restore_name}' with content from revision {revision_id}",
+                }
+
+            # For regular files, we can update the content
+            url = f"{self.base_url}/files/{file_id}"
+
+            # Update the file with the revision content
+            result = await self.api_client.make_request(
+                "PATCH", url, data=revision_content, headers={"Content-Type": mime_type}
+            )
+
+            self.logger.info(f"Successfully restored file {file_id} to revision {revision_id}")
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Failed to restore file revision: {e}")
+            raise
 
     async def copy_file(
         self, file_id: str, name: str, parent_folder_id: Optional[str] = None, fields: str = "id, name, webViewLink"

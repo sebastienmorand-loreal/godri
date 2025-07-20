@@ -1907,19 +1907,33 @@ async def slides_list_versions(presentation_id: str) -> str:
         versions = await slides_service.list_presentation_versions(presentation_id)
         import json
 
-        # Format for better readability
+        # Format for better readability with all available metadata
         formatted_versions = []
         for version in versions:
-            formatted_versions.append(
-                {
-                    "revision_id": version["id"],
-                    "modified_time": version.get("modifiedTime"),
-                    "size_bytes": version.get("size"),
-                    "last_modifying_user": version.get("lastModifyingUser", {}).get("displayName"),
-                    "keep_forever": version.get("keepForever", False),
-                    "file_type": version.get("file_type", "presentation"),
-                }
-            )
+            user_info = version.get("lastModifyingUser", {})
+            formatted_version = {
+                "revision_id": version["id"],
+                "modified_time": version.get("modifiedTime"),
+                "size_bytes": version.get("size"),
+                "keep_forever": version.get("keepForever", False),
+                "file_type": version.get("file_type", "presentation"),
+                "mime_type": version.get("mimeType"),
+                "original_filename": version.get("originalFilename"),
+                "md5_checksum": version.get("md5Checksum"),
+                "last_modifying_user": (
+                    {
+                        "display_name": user_info.get("displayName"),
+                        "email_address": user_info.get("emailAddress"),
+                        "kind": user_info.get("kind"),
+                        "me": user_info.get("me", False),
+                        "permission_id": user_info.get("permissionId"),
+                        "photo_link": user_info.get("photoLink"),
+                    }
+                    if user_info
+                    else None
+                ),
+            }
+            formatted_versions.append(formatted_version)
 
         return json.dumps({"versions": formatted_versions}, indent=2)
 
@@ -1944,14 +1958,28 @@ async def slides_get_version(presentation_id: str, revision_id: str) -> str:
         version = await slides_service.get_presentation_version(presentation_id, revision_id)
         import json
 
+        user_info = version.get("lastModifyingUser", {})
         formatted_version = {
             "revision_id": version["id"],
             "modified_time": version.get("modifiedTime"),
             "size_bytes": version.get("size"),
-            "last_modifying_user": version.get("lastModifyingUser", {}).get("displayName"),
             "keep_forever": version.get("keepForever", False),
             "file_type": version.get("file_type", "presentation"),
             "mime_type": version.get("mimeType"),
+            "original_filename": version.get("originalFilename"),
+            "md5_checksum": version.get("md5Checksum"),
+            "last_modifying_user": (
+                {
+                    "display_name": user_info.get("displayName"),
+                    "email_address": user_info.get("emailAddress"),
+                    "kind": user_info.get("kind"),
+                    "me": user_info.get("me", False),
+                    "permission_id": user_info.get("permissionId"),
+                    "photo_link": user_info.get("photoLink"),
+                }
+                if user_info
+                else None
+            ),
         }
 
         return json.dumps(formatted_version, indent=2)
@@ -2213,3 +2241,72 @@ async def keep_version_forever(file_id: str, revision_id: str, file_type: str, k
 
     except Exception as e:
         return f"❌ Error updating keep forever setting: {str(e)}"
+
+
+@mcp.tool(name="slides_restore_version")
+async def slides_restore_version(presentation_id: str, revision_id: str) -> str:
+    """Restore a Google Slides presentation to a specific version by creating a new file.
+
+    Args:
+        presentation_id: Google Slides presentation ID
+        revision_id: Revision ID to restore to
+
+    Returns:
+        JSON formatted restoration result
+    """
+    await initialize_services()
+
+    try:
+        result = await slides_service.restore_presentation_version(presentation_id, revision_id)
+        import json
+
+        return f"✅ Presentation restored successfully\n\n{json.dumps(result, indent=2)}"
+
+    except Exception as e:
+        return f"❌ Error restoring presentation: {str(e)}"
+
+
+@mcp.tool(name="docs_restore_version")
+async def docs_restore_version(document_id: str, revision_id: str) -> str:
+    """Restore a Google Docs document to a specific version by creating a new file.
+
+    Args:
+        document_id: Google Docs document ID
+        revision_id: Revision ID to restore to
+
+    Returns:
+        JSON formatted restoration result
+    """
+    await initialize_services()
+
+    try:
+        result = await docs_service.restore_document_version(document_id, revision_id)
+        import json
+
+        return f"✅ Document restored successfully\n\n{json.dumps(result, indent=2)}"
+
+    except Exception as e:
+        return f"❌ Error restoring document: {str(e)}"
+
+
+@mcp.tool(name="sheets_restore_version")
+async def sheets_restore_version(spreadsheet_id: str, revision_id: str) -> str:
+    """Restore a Google Sheets spreadsheet to a specific version by creating a new file.
+
+    Args:
+        spreadsheet_id: Google Sheets spreadsheet ID
+        revision_id: Revision ID to restore to
+
+    Returns:
+        JSON formatted restoration result
+    """
+    await initialize_services()
+
+    try:
+        result = await sheets_service.restore_spreadsheet_version(spreadsheet_id, revision_id)
+        import json
+
+        return f"✅ Spreadsheet restored successfully\n\n{json.dumps(result, indent=2)}"
+
+    except Exception as e:
+        return f"❌ Error restoring spreadsheet: {str(e)}"

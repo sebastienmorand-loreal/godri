@@ -1796,3 +1796,25 @@ class SlidesService:
         except Exception as e:
             self.logger.error("Failed to update version keep forever setting: %s", e)
             raise
+
+    async def restore_presentation_version(self, presentation_id: str, revision_id: str) -> Dict[str, Any]:
+        """Restore a presentation to a specific revision by creating a new file with the old content."""
+        self.logger.info("Restoring presentation %s to revision %s", presentation_id, revision_id)
+
+        try:
+            result = await self.drive_api.restore_file_revision(presentation_id, revision_id)
+
+            # Enhanced result with presentation-specific information
+            result["file_type"] = "presentation"
+            result["original_presentation_id"] = presentation_id
+
+            self.logger.info(
+                "Successfully restored presentation. New file: %s (ID: %s)",
+                result.get("restored_file_name"),
+                result.get("restored_file_id"),
+            )
+            return result
+
+        except Exception as e:
+            self.logger.error("Failed to restore presentation version: %s", e)
+            raise

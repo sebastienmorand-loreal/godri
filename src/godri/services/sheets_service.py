@@ -545,3 +545,25 @@ class SheetsService:
         except Exception as e:
             self.logger.error("Failed to update version keep forever setting: %s", e)
             raise
+
+    async def restore_spreadsheet_version(self, spreadsheet_id: str, revision_id: str) -> Dict[str, Any]:
+        """Restore a spreadsheet to a specific revision by creating a new file with the old content."""
+        self.logger.info("Restoring spreadsheet %s to revision %s", spreadsheet_id, revision_id)
+
+        try:
+            result = await self.drive_api.restore_file_revision(spreadsheet_id, revision_id)
+
+            # Enhanced result with spreadsheet-specific information
+            result["file_type"] = "spreadsheet"
+            result["original_spreadsheet_id"] = spreadsheet_id
+
+            self.logger.info(
+                "Successfully restored spreadsheet. New file: %s (ID: %s)",
+                result.get("restored_file_name"),
+                result.get("restored_file_id"),
+            )
+            return result
+
+        except Exception as e:
+            self.logger.error("Failed to restore spreadsheet version: %s", e)
+            raise
