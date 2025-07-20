@@ -785,6 +785,8 @@ class GodriCLI:
             await self.handle_update_doc(args)
         elif args.docs_command == "translate":
             await self.handle_translate_doc(args)
+        elif args.docs_command == "versions":
+            await self.handle_docs_versions(args)
 
     async def handle_sheets(self, args):
         """Handle sheets subcommands."""
@@ -824,6 +826,8 @@ class GodriCLI:
             await self.handle_copy_format(args)
         elif args.sheets_command == "column-width":
             await self.handle_column_width(args)
+        elif args.sheets_command == "versions":
+            await self.handle_sheets_versions(args)
 
     async def handle_sheet_values(self, args):
         """Handle sheet values subcommands."""
@@ -882,6 +886,8 @@ class GodriCLI:
             await self.handle_slides_copy(args)
         elif args.slides_command == "translate":
             await self.handle_slides_translate(args)
+        elif args.slides_command == "versions":
+            await self.handle_slides_versions(args)
 
     async def handle_translate_doc(self, args):
         """Handle document translation."""
@@ -1467,6 +1473,55 @@ class GodriCLI:
             "--end-index", type=int, help="End index for translation range (entire document if not specified)"
         )
 
+        # docs versions
+        docs_versions_parser = docs_subparsers.add_parser("versions", help="Version management")
+        docs_versions_subparsers = docs_versions_parser.add_subparsers(dest="versions_action", help="Version actions")
+
+        # docs versions list
+        docs_versions_list_parser = docs_versions_subparsers.add_parser("list", help="List all versions of a document")
+        docs_versions_list_parser.add_argument("document_id", help="Document ID")
+
+        # docs versions get
+        docs_versions_get_parser = docs_versions_subparsers.add_parser(
+            "get", help="Get metadata for a specific version"
+        )
+        docs_versions_get_parser.add_argument("document_id", help="Document ID")
+        docs_versions_get_parser.add_argument("revision_id", help="Revision ID")
+
+        # docs versions download
+        docs_versions_download_parser = docs_versions_subparsers.add_parser(
+            "download", help="Download a specific version"
+        )
+        docs_versions_download_parser.add_argument("document_id", help="Document ID")
+        docs_versions_download_parser.add_argument("revision_id", help="Revision ID")
+        docs_versions_download_parser.add_argument("output_path", help="Output file path")
+        docs_versions_download_parser.add_argument(
+            "--format",
+            "-f",
+            choices=["docx", "pdf", "txt", "html", "rtf", "odt", "epub"],
+            default="docx",
+            help="Export format (default: docx)",
+        )
+
+        # docs versions compare
+        docs_versions_compare_parser = docs_versions_subparsers.add_parser("compare", help="Compare two versions")
+        docs_versions_compare_parser.add_argument("document_id", help="Document ID")
+        docs_versions_compare_parser.add_argument("revision_id_1", help="First revision ID")
+        docs_versions_compare_parser.add_argument("revision_id_2", help="Second revision ID")
+        docs_versions_compare_parser.add_argument(
+            "--output-dir", "-o", default="/tmp", help="Output directory for comparison results"
+        )
+
+        # docs versions keep-forever
+        docs_versions_keep_parser = docs_versions_subparsers.add_parser(
+            "keep-forever", help="Keep a version forever (prevent auto-deletion)"
+        )
+        docs_versions_keep_parser.add_argument("document_id", help="Document ID")
+        docs_versions_keep_parser.add_argument("revision_id", help="Revision ID")
+        docs_versions_keep_parser.add_argument(
+            "--disable", action="store_true", help="Disable keep forever (allow auto-deletion)"
+        )
+
         # SHEETS command with subcommands
         sheets_parser = subparsers.add_parser("sheets", help="Google Sheets operations")
         sheets_subparsers = sheets_parser.add_subparsers(dest="sheets_command", help="Sheets operations")
@@ -1655,6 +1710,59 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
         sheets_column_width_parser.add_argument("end_column", help="Ending column letter (e.g., 'C')")
         sheets_column_width_parser.add_argument("width", type=int, help="Width in pixels")
 
+        # sheets versions
+        sheets_versions_parser = sheets_subparsers.add_parser("versions", help="Version management")
+        sheets_versions_subparsers = sheets_versions_parser.add_subparsers(
+            dest="versions_action", help="Version actions"
+        )
+
+        # sheets versions list
+        sheets_versions_list_parser = sheets_versions_subparsers.add_parser(
+            "list", help="List all versions of a spreadsheet"
+        )
+        sheets_versions_list_parser.add_argument("spreadsheet_id", help="Spreadsheet ID")
+
+        # sheets versions get
+        sheets_versions_get_parser = sheets_versions_subparsers.add_parser(
+            "get", help="Get metadata for a specific version"
+        )
+        sheets_versions_get_parser.add_argument("spreadsheet_id", help="Spreadsheet ID")
+        sheets_versions_get_parser.add_argument("revision_id", help="Revision ID")
+
+        # sheets versions download
+        sheets_versions_download_parser = sheets_versions_subparsers.add_parser(
+            "download", help="Download a specific version"
+        )
+        sheets_versions_download_parser.add_argument("spreadsheet_id", help="Spreadsheet ID")
+        sheets_versions_download_parser.add_argument("revision_id", help="Revision ID")
+        sheets_versions_download_parser.add_argument("output_path", help="Output file path")
+        sheets_versions_download_parser.add_argument(
+            "--format",
+            "-f",
+            choices=["xlsx", "pdf", "csv", "tsv", "html", "ods", "zip"],
+            default="xlsx",
+            help="Export format (default: xlsx)",
+        )
+
+        # sheets versions compare
+        sheets_versions_compare_parser = sheets_versions_subparsers.add_parser("compare", help="Compare two versions")
+        sheets_versions_compare_parser.add_argument("spreadsheet_id", help="Spreadsheet ID")
+        sheets_versions_compare_parser.add_argument("revision_id_1", help="First revision ID")
+        sheets_versions_compare_parser.add_argument("revision_id_2", help="Second revision ID")
+        sheets_versions_compare_parser.add_argument(
+            "--output-dir", "-o", default="/tmp", help="Output directory for comparison results"
+        )
+
+        # sheets versions keep-forever
+        sheets_versions_keep_parser = sheets_versions_subparsers.add_parser(
+            "keep-forever", help="Keep a version forever (prevent auto-deletion)"
+        )
+        sheets_versions_keep_parser.add_argument("spreadsheet_id", help="Spreadsheet ID")
+        sheets_versions_keep_parser.add_argument("revision_id", help="Revision ID")
+        sheets_versions_keep_parser.add_argument(
+            "--disable", action="store_true", help="Disable keep forever (allow auto-deletion)"
+        )
+
         # SLIDES command
         slides_parser = subparsers.add_parser("slides", help="Google Slides operations")
         slides_subparsers = slides_parser.add_subparsers(dest="slides_command", help="Slides operations")
@@ -1809,6 +1917,51 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
         )
         slides_translate_parser.add_argument("target_language", help="Target language code (e.g., 'fr', 'es')")
         slides_translate_parser.add_argument("--source-language", "-s", help="Source language code")
+
+        # slides versions
+        slides_versions_parser = slides_subparsers.add_parser("versions", help="Version management")
+        versions_subparsers = slides_versions_parser.add_subparsers(dest="versions_action", help="Version actions")
+
+        # slides versions list
+        versions_list_parser = versions_subparsers.add_parser("list", help="List all versions of a presentation")
+        versions_list_parser.add_argument("presentation_id", help="Presentation ID")
+
+        # slides versions get
+        versions_get_parser = versions_subparsers.add_parser("get", help="Get metadata for a specific version")
+        versions_get_parser.add_argument("presentation_id", help="Presentation ID")
+        versions_get_parser.add_argument("revision_id", help="Revision ID")
+
+        # slides versions download
+        versions_download_parser = versions_subparsers.add_parser("download", help="Download a specific version")
+        versions_download_parser.add_argument("presentation_id", help="Presentation ID")
+        versions_download_parser.add_argument("revision_id", help="Revision ID")
+        versions_download_parser.add_argument("output_path", help="Output file path")
+        versions_download_parser.add_argument(
+            "--format",
+            "-f",
+            choices=["pptx", "pdf", "png", "jpeg", "svg", "txt", "odp"],
+            default="pptx",
+            help="Export format (default: pptx)",
+        )
+
+        # slides versions compare
+        versions_compare_parser = versions_subparsers.add_parser("compare", help="Compare two versions")
+        versions_compare_parser.add_argument("presentation_id", help="Presentation ID")
+        versions_compare_parser.add_argument("revision_id_1", help="First revision ID")
+        versions_compare_parser.add_argument("revision_id_2", help="Second revision ID")
+        versions_compare_parser.add_argument(
+            "--output-dir", "-o", default="/tmp", help="Output directory for comparison results"
+        )
+
+        # slides versions keep-forever
+        versions_keep_parser = versions_subparsers.add_parser(
+            "keep-forever", help="Keep a version forever (prevent auto-deletion)"
+        )
+        versions_keep_parser.add_argument("presentation_id", help="Presentation ID")
+        versions_keep_parser.add_argument("revision_id", help="Revision ID")
+        versions_keep_parser.add_argument(
+            "--disable", action="store_true", help="Disable keep forever (allow auto-deletion)"
+        )
 
         # TRANSLATE command
         translate_parser = subparsers.add_parser("translate", help="Translate text")
@@ -2010,6 +2163,151 @@ Combined: '{"textFormat":{"bold":true,"fontFamily":"Calibri","fontSize":12,"fore
             await handler(parsed_args)
         else:
             print(f"Unknown command: {parsed_args.command}")
+            sys.exit(1)
+
+    # Version Management Handlers
+
+    async def handle_slides_versions(self, args):
+        """Handle slides version management subcommands."""
+        try:
+            if args.versions_action == "list":
+                versions = await self.slides_service.list_presentation_versions(args.presentation_id)
+                print(f"Versions for presentation {args.presentation_id}:")
+                for version in versions:
+                    print(f"  - Revision ID: {version['id']}")
+                    print(f"    Modified: {version.get('modifiedTime', 'Unknown')}")
+                    print(f"    Size: {version.get('size', 'Unknown')} bytes")
+                    print(f"    User: {version.get('lastModifyingUser', {}).get('displayName', 'Unknown')}")
+                    print(f"    Keep Forever: {version.get('keepForever', False)}")
+                    print()
+            elif args.versions_action == "get":
+                version = await self.slides_service.get_presentation_version(args.presentation_id, args.revision_id)
+                print(f"Version {args.revision_id} metadata:")
+                print(f"  Modified: {version.get('modifiedTime', 'Unknown')}")
+                print(f"  Size: {version.get('size', 'Unknown')} bytes")
+                print(f"  User: {version.get('lastModifyingUser', {}).get('displayName', 'Unknown')}")
+                print(f"  Keep Forever: {version.get('keepForever', False)}")
+            elif args.versions_action == "download":
+                result_path = await self.slides_service.download_presentation_version(
+                    args.presentation_id, args.revision_id, args.output_path, args.format
+                )
+                print(f"Version {args.revision_id} downloaded successfully to: {result_path}")
+            elif args.versions_action == "compare":
+                result = await self.slides_service.compare_presentation_versions(
+                    args.presentation_id, args.revision_id_1, args.revision_id_2, args.output_dir
+                )
+                print(f"Comparison completed successfully:")
+                print(f"  Version 1: {result['comparison_summary']['version_1']['revision_id']}")
+                print(f"  Version 2: {result['comparison_summary']['version_2']['revision_id']}")
+                print(f"  Size change: {result['changes']['size_change']} bytes")
+                print(f"  Time difference: {result['changes']['time_difference']}")
+                print(f"  Results saved to: {args.output_dir}")
+            elif args.versions_action == "keep-forever":
+                keep_forever = not args.disable
+                result = await self.slides_service.keep_presentation_version_forever(
+                    args.presentation_id, args.revision_id, keep_forever
+                )
+                action = "enabled" if keep_forever else "disabled"
+                print(f"Keep forever {action} for version {args.revision_id}")
+        except Exception as e:
+            self.logger.error("Version management failed: %s", str(e))
+            sys.exit(1)
+
+    async def handle_docs_versions(self, args):
+        """Handle docs version management subcommands."""
+        try:
+            if args.versions_action == "list":
+                versions = await self.docs_service.list_document_versions(args.document_id)
+                print(f"Versions for document {args.document_id}:")
+                for version in versions:
+                    print(f"  - Revision ID: {version['id']}")
+                    print(f"    Modified: {version.get('modifiedTime', 'Unknown')}")
+                    print(f"    Size: {version.get('size', 'Unknown')} bytes")
+                    print(f"    User: {version.get('lastModifyingUser', {}).get('displayName', 'Unknown')}")
+                    print(f"    Keep Forever: {version.get('keepForever', False)}")
+                    print()
+            elif args.versions_action == "get":
+                version = await self.docs_service.get_document_version(args.document_id, args.revision_id)
+                print(f"Version {args.revision_id} metadata:")
+                print(f"  Modified: {version.get('modifiedTime', 'Unknown')}")
+                print(f"  Size: {version.get('size', 'Unknown')} bytes")
+                print(f"  User: {version.get('lastModifyingUser', {}).get('displayName', 'Unknown')}")
+                print(f"  Keep Forever: {version.get('keepForever', False)}")
+            elif args.versions_action == "download":
+                result_path = await self.docs_service.download_document_version(
+                    args.document_id, args.revision_id, args.output_path, args.format
+                )
+                print(f"Version {args.revision_id} downloaded successfully to: {result_path}")
+            elif args.versions_action == "compare":
+                result = await self.docs_service.compare_document_versions(
+                    args.document_id, args.revision_id_1, args.revision_id_2, args.output_dir
+                )
+                print(f"Comparison completed successfully:")
+                print(f"  Version 1: {result['comparison_summary']['version_1']['revision_id']}")
+                print(f"  Version 2: {result['comparison_summary']['version_2']['revision_id']}")
+                print(f"  Word count change: {result['changes']['word_count_change']}")
+                print(f"  Character count change: {result['changes']['character_count_change']}")
+                print(f"  Lines added: {result['detailed_analysis']['summary']['lines_added']}")
+                print(f"  Lines deleted: {result['detailed_analysis']['summary']['lines_deleted']}")
+                print(f"  Results saved to: {args.output_dir}")
+            elif args.versions_action == "keep-forever":
+                keep_forever = not args.disable
+                result = await self.docs_service.keep_document_version_forever(
+                    args.document_id, args.revision_id, keep_forever
+                )
+                action = "enabled" if keep_forever else "disabled"
+                print(f"Keep forever {action} for version {args.revision_id}")
+        except Exception as e:
+            self.logger.error("Version management failed: %s", str(e))
+            sys.exit(1)
+
+    async def handle_sheets_versions(self, args):
+        """Handle sheets version management subcommands."""
+        try:
+            if args.versions_action == "list":
+                versions = await self.sheets_service.list_spreadsheet_versions(args.spreadsheet_id)
+                print(f"Versions for spreadsheet {args.spreadsheet_id}:")
+                for version in versions:
+                    print(f"  - Revision ID: {version['id']}")
+                    print(f"    Modified: {version.get('modifiedTime', 'Unknown')}")
+                    print(f"    Size: {version.get('size', 'Unknown')} bytes")
+                    print(f"    User: {version.get('lastModifyingUser', {}).get('displayName', 'Unknown')}")
+                    print(f"    Keep Forever: {version.get('keepForever', False)}")
+                    print()
+            elif args.versions_action == "get":
+                version = await self.sheets_service.get_spreadsheet_version(args.spreadsheet_id, args.revision_id)
+                print(f"Version {args.revision_id} metadata:")
+                print(f"  Modified: {version.get('modifiedTime', 'Unknown')}")
+                print(f"  Size: {version.get('size', 'Unknown')} bytes")
+                print(f"  User: {version.get('lastModifyingUser', {}).get('displayName', 'Unknown')}")
+                print(f"  Keep Forever: {version.get('keepForever', False)}")
+            elif args.versions_action == "download":
+                result_path = await self.sheets_service.download_spreadsheet_version(
+                    args.spreadsheet_id, args.revision_id, args.output_path, args.format
+                )
+                print(f"Version {args.revision_id} downloaded successfully to: {result_path}")
+            elif args.versions_action == "compare":
+                result = await self.sheets_service.compare_spreadsheet_versions(
+                    args.spreadsheet_id, args.revision_id_1, args.revision_id_2, args.output_dir
+                )
+                print(f"Comparison completed successfully:")
+                print(f"  Version 1: {result['comparison_summary']['version_1']['revision_id']}")
+                print(f"  Version 2: {result['comparison_summary']['version_2']['revision_id']}")
+                print(f"  Row count change: {result['changes']['row_count_change']}")
+                print(f"  Column count change: {result['changes']['column_count_change']}")
+                print(f"  Total cell changes: {result['detailed_analysis']['summary']['total_cell_changes']}")
+                print(f"  Rows added: {result['detailed_analysis']['summary']['rows_added']}")
+                print(f"  Rows deleted: {result['detailed_analysis']['summary']['rows_deleted']}")
+                print(f"  Results saved to: {args.output_dir}")
+            elif args.versions_action == "keep-forever":
+                keep_forever = not args.disable
+                result = await self.sheets_service.keep_spreadsheet_version_forever(
+                    args.spreadsheet_id, args.revision_id, keep_forever
+                )
+                action = "enabled" if keep_forever else "disabled"
+                print(f"Keep forever {action} for version {args.revision_id}")
+        except Exception as e:
+            self.logger.error("Version management failed: %s", str(e))
             sys.exit(1)
 
 

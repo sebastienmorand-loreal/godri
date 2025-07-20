@@ -1886,3 +1886,330 @@ async def slides_move(presentation_id: str, slide_id: str, new_position: int) ->
 
     except Exception as e:
         return f"❌ Error moving slide: {str(e)}"
+
+
+# Version Management Tools
+
+
+@mcp.tool(name="slides_list_versions")
+async def slides_list_versions(presentation_id: str) -> str:
+    """List all versions/revisions of a Google Slides presentation.
+
+    Args:
+        presentation_id: Google Slides presentation ID
+
+    Returns:
+        JSON formatted list of versions with metadata
+    """
+    await initialize_services()
+
+    try:
+        versions = await slides_service.list_presentation_versions(presentation_id)
+        import json
+
+        # Format for better readability
+        formatted_versions = []
+        for version in versions:
+            formatted_versions.append(
+                {
+                    "revision_id": version["id"],
+                    "modified_time": version.get("modifiedTime"),
+                    "size_bytes": version.get("size"),
+                    "last_modifying_user": version.get("lastModifyingUser", {}).get("displayName"),
+                    "keep_forever": version.get("keepForever", False),
+                    "file_type": version.get("file_type", "presentation"),
+                }
+            )
+
+        return json.dumps({"versions": formatted_versions}, indent=2)
+
+    except Exception as e:
+        return f"❌ Error listing presentation versions: {str(e)}"
+
+
+@mcp.tool(name="slides_get_version")
+async def slides_get_version(presentation_id: str, revision_id: str) -> str:
+    """Get metadata for a specific version of a presentation.
+
+    Args:
+        presentation_id: Google Slides presentation ID
+        revision_id: Revision ID to get metadata for
+
+    Returns:
+        JSON formatted version metadata
+    """
+    await initialize_services()
+
+    try:
+        version = await slides_service.get_presentation_version(presentation_id, revision_id)
+        import json
+
+        formatted_version = {
+            "revision_id": version["id"],
+            "modified_time": version.get("modifiedTime"),
+            "size_bytes": version.get("size"),
+            "last_modifying_user": version.get("lastModifyingUser", {}).get("displayName"),
+            "keep_forever": version.get("keepForever", False),
+            "file_type": version.get("file_type", "presentation"),
+            "mime_type": version.get("mimeType"),
+        }
+
+        return json.dumps(formatted_version, indent=2)
+
+    except Exception as e:
+        return f"❌ Error getting presentation version: {str(e)}"
+
+
+@mcp.tool(name="slides_compare_versions")
+async def slides_compare_versions(
+    presentation_id: str, revision_id_1: str, revision_id_2: str, output_dir: str = "/tmp"
+) -> str:
+    """Compare two versions of a presentation.
+
+    Args:
+        presentation_id: Google Slides presentation ID
+        revision_id_1: First revision ID to compare
+        revision_id_2: Second revision ID to compare
+        output_dir: Directory to save comparison results (default: /tmp)
+
+    Returns:
+        JSON formatted comparison results
+    """
+    await initialize_services()
+
+    try:
+        result = await slides_service.compare_presentation_versions(
+            presentation_id, revision_id_1, revision_id_2, output_dir
+        )
+        import json
+
+        return json.dumps(result, indent=2, default=str)
+
+    except Exception as e:
+        return f"❌ Error comparing presentation versions: {str(e)}"
+
+
+@mcp.tool(name="docs_list_versions")
+async def docs_list_versions(document_id: str) -> str:
+    """List all versions/revisions of a Google Docs document.
+
+    Args:
+        document_id: Google Docs document ID
+
+    Returns:
+        JSON formatted list of versions with metadata
+    """
+    await initialize_services()
+
+    try:
+        versions = await docs_service.list_document_versions(document_id)
+        import json
+
+        # Format for better readability
+        formatted_versions = []
+        for version in versions:
+            formatted_versions.append(
+                {
+                    "revision_id": version["id"],
+                    "modified_time": version.get("modifiedTime"),
+                    "size_bytes": version.get("size"),
+                    "last_modifying_user": version.get("lastModifyingUser", {}).get("displayName"),
+                    "keep_forever": version.get("keepForever", False),
+                    "file_type": version.get("file_type", "document"),
+                }
+            )
+
+        return json.dumps({"versions": formatted_versions}, indent=2)
+
+    except Exception as e:
+        return f"❌ Error listing document versions: {str(e)}"
+
+
+@mcp.tool(name="docs_get_version")
+async def docs_get_version(document_id: str, revision_id: str) -> str:
+    """Get metadata for a specific version of a document.
+
+    Args:
+        document_id: Google Docs document ID
+        revision_id: Revision ID to get metadata for
+
+    Returns:
+        JSON formatted version metadata
+    """
+    await initialize_services()
+
+    try:
+        version = await docs_service.get_document_version(document_id, revision_id)
+        import json
+
+        formatted_version = {
+            "revision_id": version["id"],
+            "modified_time": version.get("modifiedTime"),
+            "size_bytes": version.get("size"),
+            "last_modifying_user": version.get("lastModifyingUser", {}).get("displayName"),
+            "keep_forever": version.get("keepForever", False),
+            "file_type": version.get("file_type", "document"),
+            "mime_type": version.get("mimeType"),
+        }
+
+        return json.dumps(formatted_version, indent=2)
+
+    except Exception as e:
+        return f"❌ Error getting document version: {str(e)}"
+
+
+@mcp.tool(name="docs_compare_versions")
+async def docs_compare_versions(
+    document_id: str, revision_id_1: str, revision_id_2: str, output_dir: str = "/tmp"
+) -> str:
+    """Compare two versions of a document.
+
+    Args:
+        document_id: Google Docs document ID
+        revision_id_1: First revision ID to compare
+        revision_id_2: Second revision ID to compare
+        output_dir: Directory to save comparison results (default: /tmp)
+
+    Returns:
+        JSON formatted comparison results
+    """
+    await initialize_services()
+
+    try:
+        result = await docs_service.compare_document_versions(document_id, revision_id_1, revision_id_2, output_dir)
+        import json
+
+        return json.dumps(result, indent=2, default=str)
+
+    except Exception as e:
+        return f"❌ Error comparing document versions: {str(e)}"
+
+
+@mcp.tool(name="sheets_list_versions")
+async def sheets_list_versions(spreadsheet_id: str) -> str:
+    """List all versions/revisions of a Google Sheets spreadsheet.
+
+    Args:
+        spreadsheet_id: Google Sheets spreadsheet ID
+
+    Returns:
+        JSON formatted list of versions with metadata
+    """
+    await initialize_services()
+
+    try:
+        versions = await sheets_service.list_spreadsheet_versions(spreadsheet_id)
+        import json
+
+        # Format for better readability
+        formatted_versions = []
+        for version in versions:
+            formatted_versions.append(
+                {
+                    "revision_id": version["id"],
+                    "modified_time": version.get("modifiedTime"),
+                    "size_bytes": version.get("size"),
+                    "last_modifying_user": version.get("lastModifyingUser", {}).get("displayName"),
+                    "keep_forever": version.get("keepForever", False),
+                    "file_type": version.get("file_type", "spreadsheet"),
+                }
+            )
+
+        return json.dumps({"versions": formatted_versions}, indent=2)
+
+    except Exception as e:
+        return f"❌ Error listing spreadsheet versions: {str(e)}"
+
+
+@mcp.tool(name="sheets_get_version")
+async def sheets_get_version(spreadsheet_id: str, revision_id: str) -> str:
+    """Get metadata for a specific version of a spreadsheet.
+
+    Args:
+        spreadsheet_id: Google Sheets spreadsheet ID
+        revision_id: Revision ID to get metadata for
+
+    Returns:
+        JSON formatted version metadata
+    """
+    await initialize_services()
+
+    try:
+        version = await sheets_service.get_spreadsheet_version(spreadsheet_id, revision_id)
+        import json
+
+        formatted_version = {
+            "revision_id": version["id"],
+            "modified_time": version.get("modifiedTime"),
+            "size_bytes": version.get("size"),
+            "last_modifying_user": version.get("lastModifyingUser", {}).get("displayName"),
+            "keep_forever": version.get("keepForever", False),
+            "file_type": version.get("file_type", "spreadsheet"),
+            "mime_type": version.get("mimeType"),
+        }
+
+        return json.dumps(formatted_version, indent=2)
+
+    except Exception as e:
+        return f"❌ Error getting spreadsheet version: {str(e)}"
+
+
+@mcp.tool(name="sheets_compare_versions")
+async def sheets_compare_versions(
+    spreadsheet_id: str, revision_id_1: str, revision_id_2: str, output_dir: str = "/tmp"
+) -> str:
+    """Compare two versions of a spreadsheet.
+
+    Args:
+        spreadsheet_id: Google Sheets spreadsheet ID
+        revision_id_1: First revision ID to compare
+        revision_id_2: Second revision ID to compare
+        output_dir: Directory to save comparison results (default: /tmp)
+
+    Returns:
+        JSON formatted comparison results
+    """
+    await initialize_services()
+
+    try:
+        result = await sheets_service.compare_spreadsheet_versions(
+            spreadsheet_id, revision_id_1, revision_id_2, output_dir
+        )
+        import json
+
+        return json.dumps(result, indent=2, default=str)
+
+    except Exception as e:
+        return f"❌ Error comparing spreadsheet versions: {str(e)}"
+
+
+@mcp.tool(name="keep_version_forever")
+async def keep_version_forever(file_id: str, revision_id: str, file_type: str, keep_forever: bool = True) -> str:
+    """Keep a version forever or allow auto-deletion for any Google Workspace file.
+
+    Args:
+        file_id: File ID (presentation, document, or spreadsheet)
+        revision_id: Revision ID to update
+        file_type: File type ('slides', 'docs', or 'sheets')
+        keep_forever: Whether to keep forever (True) or allow auto-deletion (False)
+
+    Returns:
+        Success message
+    """
+    await initialize_services()
+
+    try:
+        if file_type.lower() in ["slides", "presentation"]:
+            result = await slides_service.keep_presentation_version_forever(file_id, revision_id, keep_forever)
+        elif file_type.lower() in ["docs", "document"]:
+            result = await docs_service.keep_document_version_forever(file_id, revision_id, keep_forever)
+        elif file_type.lower() in ["sheets", "spreadsheet"]:
+            result = await sheets_service.keep_spreadsheet_version_forever(file_id, revision_id, keep_forever)
+        else:
+            return f"❌ Unsupported file type: {file_type}. Use 'slides', 'docs', or 'sheets'"
+
+        action = "enabled" if keep_forever else "disabled"
+        return f"✅ Keep forever {action} for version {revision_id} of {file_type} {file_id}"
+
+    except Exception as e:
+        return f"❌ Error updating keep forever setting: {str(e)}"

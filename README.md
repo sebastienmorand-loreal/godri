@@ -9,8 +9,13 @@ A comprehensive Python CLI tool for Google Drive and Google Workspace operations
 - **Google Sheets**: Comprehensive spreadsheet operations (create, manage sheets, read/write values, formulas, formatting, rows/columns)
 - **Google Slides**: Comprehensive presentation operations (create, themes, layouts, slides, content management)
 - **Google Forms**: Complete form management (read/write forms, sections, questions, translation with 1-based numbering)
+- **Version Management**: Complete revision history access for Google Workspace documents
+  - List all versions/revisions with metadata (user, time, size)
+  - Download specific versions in various formats
+  - Compare versions with diff analysis (Google Slides focus)
+  - Keep versions forever to prevent auto-deletion
 - **Translation**: Translate text using Google Translate API
-- **MCP Server**: Model Context Protocol integration with 25+ tools including complete Forms support
+- **MCP Server**: Model Context Protocol integration with 40+ tools including complete Forms and Version Management support
 - **Authentication**: Secure OAuth2 flow with persistent tokens
 
 ## Installation
@@ -492,6 +497,80 @@ godri slides copy "SOURCE_PRESENTATION_ID" "TARGET_PRESENTATION_ID" "1,2" --posi
 - `"1,3,5"` - Slides 1, 3, and 5 only  
 - `"2-4,6-8"` - Slides 2-4 and slides 6-8
 - `"1,3-5,7"` - Slide 1, slides 3-5, and slide 7
+
+### Version Management
+
+The version management feature provides complete revision history access for Google Workspace documents (Slides, Docs, Sheets). You can list, download, compare, and manage versions.
+
+#### List Document Versions
+```bash
+# List all versions of a presentation
+godri slides versions list "PRESENTATION_ID"
+
+# List all versions of a document
+godri docs versions list "DOCUMENT_ID"
+
+# List all versions of a spreadsheet
+godri sheets versions list "SPREADSHEET_ID"
+```
+
+#### Get Version Metadata
+```bash
+# Get specific version metadata
+godri slides versions get "PRESENTATION_ID" "REVISION_ID"
+godri docs versions get "DOCUMENT_ID" "REVISION_ID"
+godri sheets versions get "SPREADSHEET_ID" "REVISION_ID"
+```
+
+#### Download Specific Versions
+```bash
+# Download specific version of presentation
+godri slides versions download "PRESENTATION_ID" "REVISION_ID" "/path/to/file.pptx" --format pptx
+
+# Download specific version of document
+godri docs versions download "DOCUMENT_ID" "REVISION_ID" "/path/to/file.docx" --format docx
+
+# Download specific version of spreadsheet
+godri sheets versions download "SPREADSHEET_ID" "REVISION_ID" "/path/to/file.xlsx" --format xlsx
+
+# Available formats for presentations: pptx, pdf, png, jpeg, svg, txt, odp
+# Available formats for documents: docx, pdf, txt, html, rtf, odt, epub
+# Available formats for spreadsheets: xlsx, pdf, csv, tsv, html, ods, zip
+```
+
+#### Compare Versions
+```bash
+# Compare two versions of a presentation (includes diff analysis for slide changes)
+godri slides versions compare "PRESENTATION_ID" "REVISION_ID_1" "REVISION_ID_2" --output-dir "/tmp/comparison"
+
+# Compare two versions of a document (text-based diff with line changes)
+godri docs versions compare "DOCUMENT_ID" "REVISION_ID_1" "REVISION_ID_2" --output-dir "/tmp/comparison"
+
+# Compare two versions of a spreadsheet (cell-by-cell comparison)
+godri sheets versions compare "SPREADSHEET_ID" "REVISION_ID_1" "REVISION_ID_2" --output-dir "/tmp/comparison"
+```
+
+**Comparison Features:**
+- **Slides**: Metadata-based diff with size changes, time differences, and modification detection
+- **Docs**: Line-by-line text diff with addition/deletion counts and detailed change analysis
+- **Sheets**: Cell-by-cell comparison with row/column change detection and cell modification tracking
+- **Output**: Detailed JSON reports and comparison files saved to specified directory
+
+#### Keep Versions Forever
+```bash
+# Prevent version from being auto-deleted
+godri slides versions keep-forever "PRESENTATION_ID" "REVISION_ID"
+
+# Allow version to be auto-deleted again
+godri slides versions keep-forever "PRESENTATION_ID" "REVISION_ID" --disable
+```
+
+**Version Management Features:**
+- **Complete Metadata**: User, modification time, file size, keep-forever status
+- **Format Support**: Download any version in multiple export formats
+- **Diff Analysis**: Intelligent comparison strategies tailored to each file type
+- **Preservation**: Keep important versions forever to prevent Google's auto-deletion
+- **Universal Access**: Works with all Google Workspace document types
 
 ### Google Forms Operations
 

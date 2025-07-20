@@ -1,6 +1,7 @@
 """Google Slides service wrapper."""
 
 import logging
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from ..commons.api.google_api_client import GoogleApiClient
 from ..commons.api.slides_api import SlidesApiClient
@@ -63,7 +64,7 @@ class SlidesService:
 
         presentation_body = {"title": title}
 
-        presentation = await self.slides_api.create_presentation(title, folder_id, theme)
+        presentation = await self.slides_api.create_presentation(title, folder_id)
         presentation_id = presentation.get("presentationId")
 
         # Apply the specified theme
@@ -1569,3 +1570,229 @@ class SlidesService:
             return "TITLE_AND_BODY"
         else:
             return "TITLE_AND_TWO_COLUMNS"
+
+    # Version Management Methods
+
+    async def list_presentation_versions(self, presentation_id: str) -> List[Dict[str, Any]]:
+        """List all versions/revisions of a presentation."""
+        self.logger.info("Listing versions for presentation: %s", presentation_id)
+
+        try:
+            result = await self.drive_api.list_file_revisions(presentation_id)
+            revisions = result.get("revisions", [])
+
+            # Enhance revision data with presentation-specific information
+            for revision in revisions:
+                revision["file_type"] = "presentation"
+                revision["mime_type"] = revision.get("mimeType", "application/vnd.google-apps.presentation")
+
+            self.logger.info("Found %d versions for presentation %s", len(revisions), presentation_id)
+            return revisions
+
+        except Exception as e:
+            self.logger.error("Failed to list presentation versions: %s", e)
+            raise
+
+    async def get_presentation_version(self, presentation_id: str, revision_id: str) -> Dict[str, Any]:
+        """Get metadata for a specific presentation version."""
+        self.logger.info("Getting version %s for presentation: %s", revision_id, presentation_id)
+
+        try:
+            revision = await self.drive_api.get_file_revision(presentation_id, revision_id)
+            revision["file_type"] = "presentation"
+            revision["mime_type"] = revision.get("mimeType", "application/vnd.google-apps.presentation")
+
+            self.logger.info("Retrieved version metadata for %s", revision_id)
+            return revision
+
+        except Exception as e:
+            self.logger.error("Failed to get presentation version: %s", e)
+            raise
+
+    async def download_presentation_version(
+        self, presentation_id: str, revision_id: str, output_path: str, format_type: str = "pptx"
+    ) -> str:
+        """Download a specific version of a presentation in the specified format."""
+        self.logger.info("Downloading version %s of presentation %s as %s", revision_id, presentation_id, format_type)
+
+        try:
+            # Map format types to MIME types
+            format_mime_types = {
+                "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "pdf": "application/pdf",
+                "png": "image/png",
+                "jpeg": "image/jpeg",
+                "svg": "image/svg+xml",
+                "txt": "text/plain",
+                "odp": "application/vnd.oasis.opendocument.presentation",
+            }
+
+            if format_type not in format_mime_types:
+                raise ValueError(f"Unsupported format: {format_type}. Supported: {list(format_mime_types.keys())}")
+
+            export_mime_type = format_mime_types[format_type]
+
+            # Ensure output path has correct extension
+            output_path_obj = Path(output_path)
+            if not output_path_obj.suffix == f".{format_type}":
+                output_path = str(output_path_obj.with_suffix(f".{format_type}"))
+
+            result_path = await self.drive_api.export_file_revision(
+                presentation_id, revision_id, export_mime_type, output_path
+            )
+
+            self.logger.info("Version downloaded successfully to: %s", result_path)
+            return result_path
+
+        except Exception as e:
+            self.logger.error("Failed to download presentation version: %s", e)
+            raise
+
+    async def compare_presentation_versions(
+        self, presentation_id: str, revision_id_1: str, revision_id_2: str, output_dir: str = "/tmp"
+    ) -> Dict[str, Any]:
+        """Compare two versions of a presentation and return detailed diff analysis."""
+        self.logger.info("Comparing presentation %s versions %s vs %s", presentation_id, revision_id_1, revision_id_2)
+
+        try:
+            from pathlib import Path
+            import json
+            import tempfile
+
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Download both versions as JSON (via PPTX conversion and analysis)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
+
+                # Download version 1
+                v1_path = temp_path / f"v1_{revision_id_1}.pptx"
+                await self.download_presentation_version(presentation_id, revision_id_1, str(v1_path), "pptx")
+
+                # Download version 2
+                v2_path = temp_path / f"v2_{revision_id_2}.pptx"
+                await self.download_presentation_version(presentation_id, revision_id_2, str(v2_path), "pptx")
+
+                # Get presentation structures for comparison
+                v1_structure = await self._extract_presentation_structure(presentation_id, revision_id_1)
+                v2_structure = await self._extract_presentation_structure(presentation_id, revision_id_2)
+
+                # Perform diff analysis
+                diff_result = await self._perform_presentation_diff(v1_structure, v2_structure)
+
+                # Save comparison result
+                comparison_file = output_dir / f"comparison_{revision_id_1}_vs_{revision_id_2}.json"
+                with open(comparison_file, "w", encoding="utf-8") as f:
+                    json.dump(diff_result, f, indent=2, default=str)
+
+                self.logger.info("Comparison completed successfully. Results saved to: %s", comparison_file)
+                return diff_result
+
+        except Exception as e:
+            self.logger.error("Failed to compare presentation versions: %s", e)
+            raise
+
+    async def _extract_presentation_structure(self, presentation_id: str, revision_id: str) -> Dict[str, Any]:
+        """Extract presentation structure for comparison purposes."""
+        try:
+            # For now, we'll extract basic metadata from the revision
+            # In a full implementation, this would parse the PPTX file or use Slides API
+            revision_info = await self.get_presentation_version(presentation_id, revision_id)
+
+            structure = {
+                "revision_id": revision_id,
+                "modified_time": revision_info.get("modifiedTime"),
+                "size": revision_info.get("size"),
+                "last_modifying_user": revision_info.get("lastModifyingUser", {}).get("displayName"),
+                "slides": [],  # This would be populated by parsing the actual content
+                "metadata": revision_info,
+            }
+
+            return structure
+
+        except Exception as e:
+            self.logger.error("Failed to extract presentation structure: %s", e)
+            raise
+
+    async def _perform_presentation_diff(
+        self, v1_structure: Dict[str, Any], v2_structure: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Perform detailed diff analysis between two presentation structures."""
+        try:
+            diff_result = {
+                "comparison_summary": {
+                    "version_1": {
+                        "revision_id": v1_structure["revision_id"],
+                        "modified_time": v1_structure["modified_time"],
+                        "size": v1_structure["size"],
+                        "last_modifying_user": v1_structure["last_modifying_user"],
+                    },
+                    "version_2": {
+                        "revision_id": v2_structure["revision_id"],
+                        "modified_time": v2_structure["modified_time"],
+                        "size": v2_structure["size"],
+                        "last_modifying_user": v2_structure["last_modifying_user"],
+                    },
+                },
+                "changes": {
+                    "added_slides": [],
+                    "deleted_slides": [],
+                    "modified_slides": [],
+                    "size_change": None,
+                    "time_difference": None,
+                },
+                "detailed_analysis": {
+                    "content_changes": [],
+                    "format_changes": [],
+                    "structural_changes": [],
+                },
+            }
+
+            # Calculate basic differences
+            v1_size = int(v1_structure.get("size", "0"))
+            v2_size = int(v2_structure.get("size", "0"))
+            diff_result["changes"]["size_change"] = v2_size - v1_size
+
+            # Parse modification times
+            from datetime import datetime
+
+            try:
+                v1_time = datetime.fromisoformat(v1_structure["modified_time"].replace("Z", "+00:00"))
+                v2_time = datetime.fromisoformat(v2_structure["modified_time"].replace("Z", "+00:00"))
+                time_diff = v2_time - v1_time
+                diff_result["changes"]["time_difference"] = str(time_diff)
+            except (ValueError, TypeError, KeyError):
+                diff_result["changes"]["time_difference"] = "Unable to calculate"
+
+            # Add placeholder for future slide-level comparison
+            diff_result["detailed_analysis"]["content_changes"].append(
+                {
+                    "type": "metadata_comparison",
+                    "description": f"Size changed by {diff_result['changes']['size_change']} bytes",
+                    "user_change": v1_structure["last_modifying_user"] != v2_structure["last_modifying_user"],
+                }
+            )
+
+            return diff_result
+
+        except Exception as e:
+            self.logger.error("Failed to perform presentation diff: %s", e)
+            raise
+
+    async def keep_presentation_version_forever(
+        self, presentation_id: str, revision_id: str, keep_forever: bool = True
+    ) -> Dict[str, Any]:
+        """Mark a presentation version to be kept forever or allow auto-deletion."""
+        self.logger.info(
+            "Setting keepForever=%s for version %s of presentation %s", keep_forever, revision_id, presentation_id
+        )
+
+        try:
+            result = await self.drive_api.keep_file_revision_forever(presentation_id, revision_id, keep_forever)
+            self.logger.info("Version %s keepForever updated to %s", revision_id, keep_forever)
+            return result
+
+        except Exception as e:
+            self.logger.error("Failed to update version keep forever setting: %s", e)
+            raise

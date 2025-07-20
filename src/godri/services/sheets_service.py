@@ -1,6 +1,7 @@
 """Google Sheets service wrapper."""
 
 import logging
+from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 from ..commons.api.google_api_client import GoogleApiClient
 from ..commons.api.sheets_api import SheetsApiClient
@@ -280,3 +281,267 @@ class SheetsService:
         result = await self.sheets_api.batch_update(spreadsheet_id, requests)
         self.logger.info("Batch update completed successfully")
         return result
+
+    # Version Management Methods
+
+    async def list_spreadsheet_versions(self, spreadsheet_id: str) -> List[Dict[str, Any]]:
+        """List all versions/revisions of a spreadsheet."""
+        self.logger.info("Listing versions for spreadsheet: %s", spreadsheet_id)
+
+        try:
+            result = await self.drive_api.list_file_revisions(spreadsheet_id)
+            revisions = result.get("revisions", [])
+
+            # Enhance revision data with spreadsheet-specific information
+            for revision in revisions:
+                revision["file_type"] = "spreadsheet"
+                revision["mime_type"] = revision.get("mimeType", "application/vnd.google-apps.spreadsheet")
+
+            self.logger.info("Found %d versions for spreadsheet %s", len(revisions), spreadsheet_id)
+            return revisions
+
+        except Exception as e:
+            self.logger.error("Failed to list spreadsheet versions: %s", e)
+            raise
+
+    async def get_spreadsheet_version(self, spreadsheet_id: str, revision_id: str) -> Dict[str, Any]:
+        """Get metadata for a specific spreadsheet version."""
+        self.logger.info("Getting version %s for spreadsheet: %s", revision_id, spreadsheet_id)
+
+        try:
+            revision = await self.drive_api.get_file_revision(spreadsheet_id, revision_id)
+            revision["file_type"] = "spreadsheet"
+            revision["mime_type"] = revision.get("mimeType", "application/vnd.google-apps.spreadsheet")
+
+            self.logger.info("Retrieved version metadata for %s", revision_id)
+            return revision
+
+        except Exception as e:
+            self.logger.error("Failed to get spreadsheet version: %s", e)
+            raise
+
+    async def download_spreadsheet_version(
+        self, spreadsheet_id: str, revision_id: str, output_path: str, format_type: str = "xlsx"
+    ) -> str:
+        """Download a specific version of a spreadsheet in the specified format."""
+        self.logger.info("Downloading version %s of spreadsheet %s as %s", revision_id, spreadsheet_id, format_type)
+
+        try:
+            # Map format types to MIME types
+            format_mime_types = {
+                "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "pdf": "application/pdf",
+                "csv": "text/csv",
+                "tsv": "text/tab-separated-values",
+                "html": "text/html",
+                "ods": "application/vnd.oasis.opendocument.spreadsheet",
+                "zip": "application/zip",
+            }
+
+            if format_type not in format_mime_types:
+                raise ValueError(f"Unsupported format: {format_type}. Supported: {list(format_mime_types.keys())}")
+
+            export_mime_type = format_mime_types[format_type]
+
+            # Ensure output path has correct extension
+            output_path_obj = Path(output_path)
+            if not output_path_obj.suffix == f".{format_type}":
+                output_path = str(output_path_obj.with_suffix(f".{format_type}"))
+
+            result_path = await self.drive_api.export_file_revision(
+                spreadsheet_id, revision_id, export_mime_type, output_path
+            )
+
+            self.logger.info("Version downloaded successfully to: %s", result_path)
+            return result_path
+
+        except Exception as e:
+            self.logger.error("Failed to download spreadsheet version: %s", e)
+            raise
+
+    async def compare_spreadsheet_versions(
+        self, spreadsheet_id: str, revision_id_1: str, revision_id_2: str, output_dir: str = "/tmp"
+    ) -> Dict[str, Any]:
+        """Compare two versions of a spreadsheet and return detailed diff analysis."""
+        self.logger.info("Comparing spreadsheet %s versions %s vs %s", spreadsheet_id, revision_id_1, revision_id_2)
+
+        try:
+            import json
+            import tempfile
+            import csv
+
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Download both versions as CSV for comparison
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
+
+                # Download version 1 as CSV
+                v1_path = temp_path / f"v1_{revision_id_1}.csv"
+                await self.download_spreadsheet_version(spreadsheet_id, revision_id_1, str(v1_path), "csv")
+
+                # Download version 2 as CSV
+                v2_path = temp_path / f"v2_{revision_id_2}.csv"
+                await self.download_spreadsheet_version(spreadsheet_id, revision_id_2, str(v2_path), "csv")
+
+                # Read the CSV content
+                with open(v1_path, "r", encoding="utf-8") as f:
+                    v1_reader = csv.reader(f)
+                    v1_data = list(v1_reader)
+
+                with open(v2_path, "r", encoding="utf-8") as f:
+                    v2_reader = csv.reader(f)
+                    v2_data = list(v2_reader)
+
+                # Get revision metadata
+                v1_metadata = await self.get_spreadsheet_version(spreadsheet_id, revision_id_1)
+                v2_metadata = await self.get_spreadsheet_version(spreadsheet_id, revision_id_2)
+
+                # Perform diff analysis
+                diff_result = await self._perform_spreadsheet_diff(v1_data, v2_data, v1_metadata, v2_metadata)
+
+                # Save comparison result
+                comparison_file = output_dir / f"comparison_{revision_id_1}_vs_{revision_id_2}.json"
+                with open(comparison_file, "w", encoding="utf-8") as f:
+                    json.dump(diff_result, f, indent=2, default=str)
+
+                self.logger.info("Comparison completed successfully. Results saved to: %s", comparison_file)
+                return diff_result
+
+        except Exception as e:
+            self.logger.error("Failed to compare spreadsheet versions: %s", e)
+            raise
+
+    async def _perform_spreadsheet_diff(
+        self,
+        v1_data: List[List[str]],
+        v2_data: List[List[str]],
+        v1_metadata: Dict[str, Any],
+        v2_metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Perform detailed diff analysis between two spreadsheet contents."""
+        try:
+            from datetime import datetime
+
+            diff_result = {
+                "comparison_summary": {
+                    "version_1": {
+                        "revision_id": v1_metadata["id"],
+                        "modified_time": v1_metadata.get("modifiedTime"),
+                        "size": v1_metadata.get("size"),
+                        "last_modifying_user": v1_metadata.get("lastModifyingUser", {}).get("displayName"),
+                        "row_count": len(v1_data),
+                        "column_count": max(len(row) for row in v1_data) if v1_data else 0,
+                    },
+                    "version_2": {
+                        "revision_id": v2_metadata["id"],
+                        "modified_time": v2_metadata.get("modifiedTime"),
+                        "size": v2_metadata.get("size"),
+                        "last_modifying_user": v2_metadata.get("lastModifyingUser", {}).get("displayName"),
+                        "row_count": len(v2_data),
+                        "column_count": max(len(row) for row in v2_data) if v2_data else 0,
+                    },
+                },
+                "changes": {
+                    "row_count_change": len(v2_data) - len(v1_data),
+                    "column_count_change": (max(len(row) for row in v2_data) if v2_data else 0)
+                    - (max(len(row) for row in v1_data) if v1_data else 0),
+                    "size_change": None,
+                    "time_difference": None,
+                },
+                "detailed_analysis": {
+                    "added_rows": [],
+                    "deleted_rows": [],
+                    "modified_cells": [],
+                    "summary": {},
+                },
+            }
+
+            # Calculate basic differences
+            v1_size = int(v1_metadata.get("size", "0"))
+            v2_size = int(v2_metadata.get("size", "0"))
+            diff_result["changes"]["size_change"] = v2_size - v1_size
+
+            # Parse modification times
+            try:
+                v1_time = datetime.fromisoformat(v1_metadata["modifiedTime"].replace("Z", "+00:00"))
+                v2_time = datetime.fromisoformat(v2_metadata["modifiedTime"].replace("Z", "+00:00"))
+                time_diff = v2_time - v1_time
+                diff_result["changes"]["time_difference"] = str(time_diff)
+            except (ValueError, TypeError, KeyError):
+                diff_result["changes"]["time_difference"] = "Unable to calculate"
+
+            # Analyze cell-by-cell differences
+            max_rows = max(len(v1_data), len(v2_data))
+            max_cols = max(
+                max(len(row) for row in v1_data) if v1_data else 0, max(len(row) for row in v2_data) if v2_data else 0
+            )
+
+            cell_changes = 0
+            for row_idx in range(max_rows):
+                v1_row = v1_data[row_idx] if row_idx < len(v1_data) else []
+                v2_row = v2_data[row_idx] if row_idx < len(v2_data) else []
+
+                for col_idx in range(max_cols):
+                    v1_cell = v1_row[col_idx] if col_idx < len(v1_row) else ""
+                    v2_cell = v2_row[col_idx] if col_idx < len(v2_row) else ""
+
+                    if v1_cell != v2_cell:
+                        cell_changes += 1
+                        diff_result["detailed_analysis"]["modified_cells"].append(
+                            {
+                                "row": row_idx + 1,  # 1-based indexing for user readability
+                                "column": col_idx + 1,
+                                "old_value": v1_cell,
+                                "new_value": v2_cell,
+                            }
+                        )
+
+            # Detect added/deleted rows
+            if len(v2_data) > len(v1_data):
+                for row_idx in range(len(v1_data), len(v2_data)):
+                    diff_result["detailed_analysis"]["added_rows"].append(
+                        {
+                            "row": row_idx + 1,
+                            "content": v2_data[row_idx] if row_idx < len(v2_data) else [],
+                        }
+                    )
+
+            if len(v1_data) > len(v2_data):
+                for row_idx in range(len(v2_data), len(v1_data)):
+                    diff_result["detailed_analysis"]["deleted_rows"].append(
+                        {
+                            "row": row_idx + 1,
+                            "content": v1_data[row_idx] if row_idx < len(v1_data) else [],
+                        }
+                    )
+
+            diff_result["detailed_analysis"]["summary"] = {
+                "total_cell_changes": cell_changes,
+                "rows_added": len(diff_result["detailed_analysis"]["added_rows"]),
+                "rows_deleted": len(diff_result["detailed_analysis"]["deleted_rows"]),
+            }
+
+            return diff_result
+
+        except Exception as e:
+            self.logger.error("Failed to perform spreadsheet diff: %s", e)
+            raise
+
+    async def keep_spreadsheet_version_forever(
+        self, spreadsheet_id: str, revision_id: str, keep_forever: bool = True
+    ) -> Dict[str, Any]:
+        """Mark a spreadsheet version to be kept forever or allow auto-deletion."""
+        self.logger.info(
+            "Setting keepForever=%s for version %s of spreadsheet %s", keep_forever, revision_id, spreadsheet_id
+        )
+
+        try:
+            result = await self.drive_api.keep_file_revision_forever(spreadsheet_id, revision_id, keep_forever)
+            self.logger.info("Version %s keepForever updated to %s", revision_id, keep_forever)
+            return result
+
+        except Exception as e:
+            self.logger.error("Failed to update version keep forever setting: %s", e)
+            raise

@@ -1,6 +1,7 @@
 """Google Docs service wrapper."""
 
 import logging
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from ..commons.api.google_api_client import GoogleApiClient
 from ..commons.api.docs_api import DocsApiClient
@@ -131,3 +132,235 @@ class DocsService:
         """Execute batch updates on document."""
         self.logger.info("Executing batch update with %d requests on document: %s", len(requests), document_id)
         return await self.docs_api.batch_update(document_id, requests)
+
+    # Version Management Methods
+
+    async def list_document_versions(self, document_id: str) -> List[Dict[str, Any]]:
+        """List all versions/revisions of a document."""
+        self.logger.info("Listing versions for document: %s", document_id)
+
+        try:
+            result = await self.drive_api.list_file_revisions(document_id)
+            revisions = result.get("revisions", [])
+
+            # Enhance revision data with document-specific information
+            for revision in revisions:
+                revision["file_type"] = "document"
+                revision["mime_type"] = revision.get("mimeType", "application/vnd.google-apps.document")
+
+            self.logger.info("Found %d versions for document %s", len(revisions), document_id)
+            return revisions
+
+        except Exception as e:
+            self.logger.error("Failed to list document versions: %s", e)
+            raise
+
+    async def get_document_version(self, document_id: str, revision_id: str) -> Dict[str, Any]:
+        """Get metadata for a specific document version."""
+        self.logger.info("Getting version %s for document: %s", revision_id, document_id)
+
+        try:
+            revision = await self.drive_api.get_file_revision(document_id, revision_id)
+            revision["file_type"] = "document"
+            revision["mime_type"] = revision.get("mimeType", "application/vnd.google-apps.document")
+
+            self.logger.info("Retrieved version metadata for %s", revision_id)
+            return revision
+
+        except Exception as e:
+            self.logger.error("Failed to get document version: %s", e)
+            raise
+
+    async def download_document_version(
+        self, document_id: str, revision_id: str, output_path: str, format_type: str = "docx"
+    ) -> str:
+        """Download a specific version of a document in the specified format."""
+        self.logger.info("Downloading version %s of document %s as %s", revision_id, document_id, format_type)
+
+        try:
+            # Map format types to MIME types
+            format_mime_types = {
+                "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "pdf": "application/pdf",
+                "txt": "text/plain",
+                "html": "text/html",
+                "rtf": "application/rtf",
+                "odt": "application/vnd.oasis.opendocument.text",
+                "epub": "application/epub+zip",
+            }
+
+            if format_type not in format_mime_types:
+                raise ValueError(f"Unsupported format: {format_type}. Supported: {list(format_mime_types.keys())}")
+
+            export_mime_type = format_mime_types[format_type]
+
+            # Ensure output path has correct extension
+            output_path_obj = Path(output_path)
+            if not output_path_obj.suffix == f".{format_type}":
+                output_path = str(output_path_obj.with_suffix(f".{format_type}"))
+
+            result_path = await self.drive_api.export_file_revision(
+                document_id, revision_id, export_mime_type, output_path
+            )
+
+            self.logger.info("Version downloaded successfully to: %s", result_path)
+            return result_path
+
+        except Exception as e:
+            self.logger.error("Failed to download document version: %s", e)
+            raise
+
+    async def compare_document_versions(
+        self, document_id: str, revision_id_1: str, revision_id_2: str, output_dir: str = "/tmp"
+    ) -> Dict[str, Any]:
+        """Compare two versions of a document and return detailed diff analysis."""
+        self.logger.info("Comparing document %s versions %s vs %s", document_id, revision_id_1, revision_id_2)
+
+        try:
+            import json
+            import tempfile
+
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Download both versions as text for comparison
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
+
+                # Download version 1 as text
+                v1_path = temp_path / f"v1_{revision_id_1}.txt"
+                await self.download_document_version(document_id, revision_id_1, str(v1_path), "txt")
+
+                # Download version 2 as text
+                v2_path = temp_path / f"v2_{revision_id_2}.txt"
+                await self.download_document_version(document_id, revision_id_2, str(v2_path), "txt")
+
+                # Read the text content
+                with open(v1_path, "r", encoding="utf-8") as f:
+                    v1_content = f.read()
+                with open(v2_path, "r", encoding="utf-8") as f:
+                    v2_content = f.read()
+
+                # Get revision metadata
+                v1_metadata = await self.get_document_version(document_id, revision_id_1)
+                v2_metadata = await self.get_document_version(document_id, revision_id_2)
+
+                # Perform diff analysis
+                diff_result = await self._perform_document_diff(v1_content, v2_content, v1_metadata, v2_metadata)
+
+                # Save comparison result
+                comparison_file = output_dir / f"comparison_{revision_id_1}_vs_{revision_id_2}.json"
+                with open(comparison_file, "w", encoding="utf-8") as f:
+                    json.dump(diff_result, f, indent=2, default=str)
+
+                self.logger.info("Comparison completed successfully. Results saved to: %s", comparison_file)
+                return diff_result
+
+        except Exception as e:
+            self.logger.error("Failed to compare document versions: %s", e)
+            raise
+
+    async def _perform_document_diff(
+        self, v1_content: str, v2_content: str, v1_metadata: Dict[str, Any], v2_metadata: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Perform detailed diff analysis between two document contents."""
+        try:
+            import difflib
+            from datetime import datetime
+
+            diff_result = {
+                "comparison_summary": {
+                    "version_1": {
+                        "revision_id": v1_metadata["id"],
+                        "modified_time": v1_metadata.get("modifiedTime"),
+                        "size": v1_metadata.get("size"),
+                        "last_modifying_user": v1_metadata.get("lastModifyingUser", {}).get("displayName"),
+                        "word_count": len(v1_content.split()),
+                        "character_count": len(v1_content),
+                    },
+                    "version_2": {
+                        "revision_id": v2_metadata["id"],
+                        "modified_time": v2_metadata.get("modifiedTime"),
+                        "size": v2_metadata.get("size"),
+                        "last_modifying_user": v2_metadata.get("lastModifyingUser", {}).get("displayName"),
+                        "word_count": len(v2_content.split()),
+                        "character_count": len(v2_content),
+                    },
+                },
+                "changes": {
+                    "word_count_change": len(v2_content.split()) - len(v1_content.split()),
+                    "character_count_change": len(v2_content) - len(v1_content),
+                    "size_change": None,
+                    "time_difference": None,
+                },
+                "detailed_analysis": {
+                    "content_changes": [],
+                    "line_by_line_diff": [],
+                    "summary": {},
+                },
+            }
+
+            # Calculate basic differences
+            v1_size = int(v1_metadata.get("size", "0"))
+            v2_size = int(v2_metadata.get("size", "0"))
+            diff_result["changes"]["size_change"] = v2_size - v1_size
+
+            # Parse modification times
+            try:
+                v1_time = datetime.fromisoformat(v1_metadata["modifiedTime"].replace("Z", "+00:00"))
+                v2_time = datetime.fromisoformat(v2_metadata["modifiedTime"].replace("Z", "+00:00"))
+                time_diff = v2_time - v1_time
+                diff_result["changes"]["time_difference"] = str(time_diff)
+            except (ValueError, TypeError, KeyError):
+                diff_result["changes"]["time_difference"] = "Unable to calculate"
+
+            # Perform line-by-line diff
+            v1_lines = v1_content.splitlines()
+            v2_lines = v2_content.splitlines()
+
+            differ = difflib.unified_diff(v1_lines, v2_lines, lineterm="", n=3)
+            diff_lines = list(differ)
+
+            diff_result["detailed_analysis"]["line_by_line_diff"] = diff_lines
+
+            # Count different types of changes
+            additions = sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++"))
+            deletions = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
+
+            diff_result["detailed_analysis"]["summary"] = {
+                "lines_added": additions,
+                "lines_deleted": deletions,
+                "total_changes": additions + deletions,
+            }
+
+            # Add content change analysis
+            if v1_content != v2_content:
+                diff_result["detailed_analysis"]["content_changes"].append(
+                    {
+                        "type": "text_content_change",
+                        "description": f"Content modified: {additions} lines added, {deletions} lines deleted",
+                        "word_change": diff_result["changes"]["word_count_change"],
+                        "character_change": diff_result["changes"]["character_count_change"],
+                    }
+                )
+
+            return diff_result
+
+        except Exception as e:
+            self.logger.error("Failed to perform document diff: %s", e)
+            raise
+
+    async def keep_document_version_forever(
+        self, document_id: str, revision_id: str, keep_forever: bool = True
+    ) -> Dict[str, Any]:
+        """Mark a document version to be kept forever or allow auto-deletion."""
+        self.logger.info("Setting keepForever=%s for version %s of document %s", keep_forever, revision_id, document_id)
+
+        try:
+            result = await self.drive_api.keep_file_revision_forever(document_id, revision_id, keep_forever)
+            self.logger.info("Version %s keepForever updated to %s", revision_id, keep_forever)
+            return result
+
+        except Exception as e:
+            self.logger.error("Failed to update version keep forever setting: %s", e)
+            raise

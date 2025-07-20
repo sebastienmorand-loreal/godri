@@ -18,8 +18,10 @@ class GoogleApiClient:
         self.logger = logging.getLogger(__name__)
         self.session = None
         self.base_url = "https://www.googleapis.com"
-        self.max_retries = 3
+        self.max_retries = 10  # Increased for rate limiting scenarios
         self.retry_delay = 1.0
+        self.rate_limit_max_retries = 20  # Special handling for rate limits
+        self.rate_limit_base_delay = 5.0  # Start with 5 seconds for rate limits
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -106,17 +108,34 @@ class GoogleApiClient:
                         )
 
                 elif response.status == 429:
-                    # Rate limited - retry with exponential backoff
-                    if retry_count < self.max_retries:
-                        delay = self.retry_delay * (2**retry_count)
-                        self.logger.warning(f"Rate limited, retrying in {delay}s")
-                        await asyncio.sleep(delay)
+                    # Rate limited - retry with special handling and longer backoff
+                    if retry_count < self.rate_limit_max_retries:
+                        # Use exponential backoff with jitter for rate limits
+                        # Formula: base_delay * (2^retry_count) + jitter
+                        import random
+
+                        delay = self.rate_limit_base_delay * (2 ** min(retry_count, 6))  # Cap at 2^6 = 64x multiplier
+                        jitter = random.uniform(0, delay * 0.1)  # Add up to 10% jitter
+                        total_delay = delay + jitter
+
+                        self.logger.warning(
+                            f"Rate limited (attempt {retry_count + 1}/{self.rate_limit_max_retries}), retrying in {total_delay:.1f}s"
+                        )
+                        await asyncio.sleep(total_delay)
                         return await self.make_request(
                             method, url, params, data, files, additional_headers, retry_count + 1
                         )
                     else:
+                        self.logger.error(
+                            f"Request failed after {self.rate_limit_max_retries} retries: 429, message='', url='{url}'"
+                        )
+                        # For rate limits, we'll continue and let the higher level handle it
+                        # rather than throwing an exception that stops the entire process
                         raise aiohttp.ClientResponseError(
-                            response.request_info, response.history, status=response.status
+                            response.request_info,
+                            response.history,
+                            status=response.status,
+                            message="Rate limit exceeded after maximum retries",
                         )
 
                 elif response.status >= 500:

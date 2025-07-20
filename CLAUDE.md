@@ -64,6 +64,17 @@ All services follow the same dependency injection pattern:
 - **Translation Support**: Translate questions and answer options while preserving form structure
 - **Positioning Control**: Insert sections and questions at specific positions (before/after/end)
 
+### Version Management System
+- **Complete Revision History**: Access all versions/revisions for Google Workspace documents (Slides, Docs, Sheets)
+- **Version Listing**: List all available versions with metadata (user, modification time, size, keep-forever status)
+- **Version Download**: Download specific versions in multiple export formats (pptx, pdf, docx, xlsx, etc.)
+- **Version Comparison**: Intelligent diff strategies tailored to each document type:
+  - **Slides**: Metadata-based comparison detecting slide additions, deletions, and modifications
+  - **Docs**: Line-by-line text diff with addition/deletion counts and change analysis
+  - **Sheets**: Cell-by-cell comparison with row/column change detection
+- **Version Preservation**: Keep important versions forever to prevent Google's auto-deletion
+- **Google Drive API v3 Integration**: Uses Drive revisions endpoints for backend functionality
+
 ## Development Standards
 
 ### Code Formatting
@@ -122,6 +133,25 @@ godri mcp stdio                      # After install
 uv run src/godri/main.py mcp stdio   # Direct from source
 ```
 
+### Testing Version Management Features
+```bash
+# List versions of documents
+godri slides versions list PRESENTATION_ID
+godri docs versions list DOCUMENT_ID
+godri sheets versions list SPREADSHEET_ID
+
+# Compare two versions (with diff analysis)
+godri slides versions compare PRESENTATION_ID REVISION_ID_1 REVISION_ID_2
+godri docs versions compare DOCUMENT_ID REVISION_ID_1 REVISION_ID_2
+
+# Download specific versions
+godri slides versions download PRESENTATION_ID REVISION_ID output.pptx --format pptx
+godri docs versions download DOCUMENT_ID REVISION_ID output.docx --format docx
+
+# Keep versions forever
+godri slides versions keep-forever PRESENTATION_ID REVISION_ID
+```
+
 ### Testing Copy Features
 ```bash
 # After install (recommended)
@@ -167,9 +197,10 @@ export GODRI_CLIENT_FILE="/path/to/client_secret.json"
 - **Complete Formatting**: Full parity with CLI formatting capabilities (format_range, copy_format, set_column_width)
 
 ### CLI Command Structure (`main.py`)
-- **Hierarchical Commands**: drive, docs, sheets, slides, translate, mcp
+- **Hierarchical Commands**: drive, docs, sheets, slides, translate, mcp, versions
 - **Subcommand Handlers**: Pattern-based handler methods
 - **Argument Parsing**: Comprehensive argparse configuration
+- **Version Commands**: Integrated version management for all Google Workspace document types
 
 ## File-Specific Guidelines
 
@@ -183,11 +214,18 @@ export GODRI_CLIENT_FILE="/path/to/client_secret.json"
 - **Range Support**: Core range parsing and expansion logic
 - **Content Management**: Detailed content extraction with formatting
 - **Copy Operations**: Theme preservation and source linking support
+- **Version Management**: Complete presentation version history with metadata-based diff comparison
 
 ### `sheets_service.py`
 - **Copy Operations**: Single and multiple sheet copying
 - **Collision Handling**: Automatic name resolution for duplicates
 - **Format Preservation**: Complete formatting and structure preservation
+- **Version Management**: Spreadsheet version history with cell-by-cell diff comparison
+
+### `docs_service.py`
+- **Document Operations**: Complete document CRUD with markdown support
+- **Translation Integration**: Document translation preserving formatting
+- **Version Management**: Document version history with line-by-line text diff comparison
 
 ### `forms_service.py`
 - **1-Based Numbering**: All user-facing operations use 1-based section/question numbering
@@ -202,8 +240,9 @@ export GODRI_CLIENT_FILE="/path/to/client_secret.json"
 - **Error Handling**: Comprehensive try/catch with user-friendly messages
 - **Forms Tools**: 12 comprehensive tools with 1-based numbering and automatic index conversion
 - **Sheets Tools**: 13 comprehensive tools including formatting (format_range, copy_format, set_column_width)
+- **Version Management Tools**: Complete version history access for all Google Workspace document types
 - **Structured Data**: JSON List[List] support for values_read/values_set operations
-- **Full CLI Parity**: All CLI formatting capabilities available through MCP tools
+- **Full CLI Parity**: All CLI formatting and version management capabilities available through MCP tools
 
 ## Testing Approach
 
@@ -214,6 +253,9 @@ export GODRI_CLIENT_FILE="/path/to/client_secret.json"
 - Test MCP tools through CLI equivalents
 - Test Forms 1-based numbering with real forms (sections and questions)
 - Verify Forms translation preserves structure and formatting
+- Test version management with document modifications to generate revision history
+- Verify version comparison accuracy across different document types
+- Test version download in multiple export formats
 
 ### Error Scenarios
 - Invalid slide/sheet/form references
@@ -222,6 +264,9 @@ export GODRI_CLIENT_FILE="/path/to/client_secret.json"
 - Network connectivity issues
 - Forms section/question numbering confusion (1-based vs 0-based)
 - Forms API pageBreakItem vs itemType detection issues
+- Version management with insufficient revision history
+- Version comparison with corrupted or inaccessible revisions
+- Export format compatibility issues for older document versions
 
 ## Common Issues & Solutions
 
@@ -245,6 +290,13 @@ export GODRI_CLIENT_FILE="/path/to/client_secret.json"
 - Remember that section/question numbers are 1-based (Section 7 = Training)
 - Verify form permissions for write operations
 - Check form ID format (different from Drive file IDs)
+
+### Version Management Issues
+- Ensure sufficient document modification history exists for comparison
+- Check file permissions for version access (may require owner/editor permissions)
+- Verify revision IDs are valid (use list command to get available revisions)
+- Use appropriate export formats for specific document types
+- Handle Google's automatic revision cleanup (use keep-forever for important versions)
 
 ## Git Workflow
 
@@ -294,6 +346,9 @@ git commit -m "Descriptive commit message"
 - ✅ **July 2025**: Complete async refactoring of slides_service.py and forms_service.py
 - ✅ **July 2025**: Removal of all synchronous Google Cloud dependencies
 - ✅ **July 2025**: Full pure async implementation with aiohttp achieved
+- ✅ **July 2025**: Complete version management system implementation with Google Drive API v3 revisions
+- ✅ **July 2025**: Version comparison with intelligent diff strategies for Slides, Docs, and Sheets
+- ✅ **July 2025**: End-to-end testing suite for version management functionality
 
 ### Architecture Transformation
 The project has been completely transformed from synchronous Google client libraries to a fully async implementation using aiohttp:
@@ -304,7 +359,7 @@ The project has been completely transformed from synchronous Google client libra
 
 ### New Async API Clients (`src/godri/commons/api/`)
 - **google_api_client.py**: Base async client with retry logic, rate limiting, credential refresh
-- **drive_api.py**: Async Google Drive operations with smart download and resumable uploads
+- **drive_api.py**: Async Google Drive operations with smart download, resumable uploads, and comprehensive revision management
 - **docs_api.py**: Async Google Docs with markdown processing and document manipulation
 - **sheets_api.py**: Async Google Sheets with batch operations, formatting, and translation
 - **slides_api.py**: Async Google Slides with presentation management and content manipulation

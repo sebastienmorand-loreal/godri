@@ -218,6 +218,75 @@ class DriveApiClient:
         self.logger.info(f"File shared successfully with {email}")
         return result
 
+    async def list_file_revisions(
+        self,
+        file_id: str,
+        fields: str = "nextPageToken,revisions(id,modifiedTime,size,keepForever,lastModifyingUser,mimeType,originalFilename,md5Checksum)",
+    ) -> Dict[str, Any]:
+        """List all revisions for a file."""
+        self.logger.info(f"Listing revisions for file: {file_id}")
+
+        params = {"fields": fields}
+        url = f"{self.base_url}/files/{file_id}/revisions"
+
+        result = await self.api_client.make_request("GET", url, params=params)
+        revisions = result.get("revisions", [])
+        self.logger.info(f"Found {len(revisions)} revisions for file {file_id}")
+        return result
+
+    async def get_file_revision(
+        self,
+        file_id: str,
+        revision_id: str,
+        fields: str = "id,modifiedTime,size,keepForever,lastModifyingUser,mimeType,originalFilename,md5Checksum",
+    ) -> Dict[str, Any]:
+        """Get metadata for a specific revision."""
+        self.logger.info(f"Getting revision {revision_id} for file: {file_id}")
+
+        params = {"fields": fields}
+        url = f"{self.base_url}/files/{file_id}/revisions/{revision_id}"
+
+        result = await self.api_client.make_request("GET", url, params=params)
+        self.logger.info(f"Retrieved revision metadata for {revision_id}")
+        return result
+
+    async def download_file_revision(self, file_id: str, revision_id: str, output_path: str) -> str:
+        """Download specific revision content."""
+        self.logger.info(f"Downloading revision {revision_id} for file {file_id}")
+
+        url = f"{self.base_url}/files/{file_id}/revisions/{revision_id}"
+        download_url = f"{url}?alt=media"
+
+        result_path = await self.api_client.download_file(download_url, output_path)
+        self.logger.info(f"Revision downloaded successfully to: {result_path}")
+        return result_path
+
+    async def export_file_revision(
+        self, file_id: str, revision_id: str, export_mime_type: str, output_path: str
+    ) -> str:
+        """Export revision in specific format for Google Workspace files."""
+        self.logger.info(f"Exporting revision {revision_id} for file {file_id} as {export_mime_type}")
+
+        url = f"{self.base_url}/files/{file_id}/revisions/{revision_id}/export"
+        export_url = f"{url}?mimeType={export_mime_type}"
+
+        result_path = await self.api_client.download_file(export_url, output_path)
+        self.logger.info(f"Revision exported successfully to: {result_path}")
+        return result_path
+
+    async def keep_file_revision_forever(
+        self, file_id: str, revision_id: str, keep_forever: bool = True
+    ) -> Dict[str, Any]:
+        """Update revision to keep forever or allow auto-deletion."""
+        self.logger.info(f"Setting keepForever={keep_forever} for revision {revision_id} of file {file_id}")
+
+        url = f"{self.base_url}/files/{file_id}/revisions/{revision_id}"
+        data = {"keepForever": keep_forever}
+
+        result = await self.api_client.make_request("PATCH", url, data=data)
+        self.logger.info(f"Revision {revision_id} keepForever updated to {keep_forever}")
+        return result
+
     async def copy_file(
         self, file_id: str, name: str, parent_folder_id: Optional[str] = None, fields: str = "id, name, webViewLink"
     ) -> Dict[str, Any]:
